@@ -196,3 +196,38 @@ def test_image_document_uses_images_and_requires_only_evidence() -> None:
     assert llm.calls[0]["images"] == (b"png-bytes",)
     assert by_path["employee.dni"].confidence_score == 0.95
     assert by_path["employee.nombre"].confidence_score == 0.5  # sin evidencia
+
+
+def test_misread_amount_is_corrected_from_evidence() -> None:
+    llm = FakeLLM(payload(field("terms.remuneracion_bruta", "2500.00", "sueldo bruto de $ 2.500.000", 0.9)))
+    result = ExtractionService(llm).extract_from_text("con un sueldo bruto de $ 2.500.000.")
+    assert result.candidates[0].value == "2500000"
+    assert result.candidates[0].confidence_score == 0.9
+    assert "corregido" in result.warnings[0]
+
+
+def test_misread_date_is_corrected_from_evidence() -> None:
+    llm = FakeLLM(payload(field("employee.fecha_nacimiento", "1995-03-05", "nacido el 15/03/1995")))
+    result = ExtractionService(llm).extract_from_text("nacido el 15/03/1995")
+    assert result.candidates[0].value == "1995-03-15"
+
+
+def test_amount_with_ambiguous_evidence_is_capped() -> None:
+    text = "40 horas semanales y $ 2.500.000"
+    llm = FakeLLM(payload(field("terms.remuneracion_bruta", "1000", text)))
+    result = ExtractionService(llm).extract_from_text(text)
+    assert result.candidates[0].confidence_score == 0.5
+    assert "no se puede verificar" in result.warnings[0]
+
+
+def test_modality_not_in_evidence_is_capped() -> None:
+    text = "contrato por tiempo indeterminado"
+    ok = ExtractionService(
+        FakeLLM(payload(field("terms.modalidad", "indeterminado", text)))
+    ).extract_from_text(text)
+    assert ok.candidates[0].value == "INDETERMINATE" and ok.candidates[0].confidence_score == 0.95
+
+    bad = ExtractionService(
+        FakeLLM(payload(field("terms.modalidad", "PART_TIME", text)))
+    ).extract_from_text(text)
+    assert bad.candidates[0].value == "INDETERMINATE"  # corregido según la evidencia

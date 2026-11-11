@@ -23,7 +23,12 @@ from app.core.exceptions import ExtractionError
 from app.schemas.extraction import ExtractedField, FieldCandidate, LLMExtractionPayload
 from app.services.document_loader import LoadedDocument
 from app.services.llm_client import LLMClient
-from app.services.normalization import normalize_value
+from app.services.normalization import (
+    normalize_amount,
+    normalize_date,
+    normalize_modality,
+    normalize_value,
+)
 from app.services.validation_service import FIELD_PATHS, SECTION_MODELS, ValidationService
 
 _DIGIT_FIELDS: Final[frozenset[str]] = frozenset({"dni", "cuil", "cuit"})
@@ -35,6 +40,18 @@ _FREE_TEXT_FIELDS: Final[frozenset[str]] = frozenset(
     }
 )  # fmt: skip
 _MAX_MESSAGE_CHARS: Final[int] = 8_000
+_AMOUNT_TOKEN_RE: Final[re.Pattern[str]] = re.compile(r"\d[\d.,]*\d|\d")
+_DATE_TOKEN_RES: Final[tuple[re.Pattern[str], ...]] = (
+    re.compile(r"\d{4}-\d{1,2}-\d{1,2}"),
+    re.compile(r"\d{1,2}[/\-.]\d{1,2}[/\-.]\d{4}"),
+    re.compile(r"\d{1,2}\s+de\s+[A-Za-zÁÉÍÓÚáéíóú]+\s+de(?:l)?\s+\d{4}", re.IGNORECASE),
+)
+_MODALITIES: Final[frozenset[str]] = frozenset(
+    {"INDETERMINATE", "FIXED_TERM", "TRIAL_PERIOD", "PART_TIME"}
+)
+_EVIDENCE_DERIVED_FIELDS: Final[frozenset[str]] = frozenset(
+    {"remuneracion_bruta", "fecha_nacimiento", "fecha_inicio", "modalidad"}
+)
 
 _SYSTEM_PROMPT: Final[str] = """\
 Eres un extractor de datos para contratos laborales. NO eres un asistente conversacional.
@@ -67,6 +84,22 @@ def _norm_text(text: str) -> str:
 
 def _digits(text: str) -> str:
     return re.sub(r"\D", "", text)
+
+
+def _evidence_values(name: str, evidence: str) -> List[str]:
+    """Valores (ya normalizados) que la evidencia literal permite leer para ese campo."""
+    found: List[str] = []
+    if name == "remuneracion_bruta":
+        found = [normalize_amount(token) for token in _AMOUNT_TOKEN_RE.findall(evidence)]
+        found = [v for v in found if re.fullmatch(r"\d+(\.\d+)?", v)]
+    elif name in {"fecha_nacimiento", "fecha_inicio"}:
+        for pattern in _DATE_TOKEN_RES:
+            found.extend(normalize_date(match) for match in pattern.findall(evidence))
+        found = [v for v in found if re.fullmatch(r"\d{4}-\d{2}-\d{2}", v)]
+    elif name == "modalidad":
+        modality = normalize_modality(evidence)
+        found = [modality] if modality in _MODALITIES else []
+    return found
 
 
 @dataclass(frozen=True)
@@ -162,6 +195,9 @@ class ExtractionService:
                 continue
 
             value = normalize_value(path, item.value)
+            value, correction = self._reconcile_with_evidence(path, value, item.evidence)
+            if correction:
+                warnings.append(f"{path}: {correction}")
             confidence = item.confidence
             problem = self._grounding_problem(path, item, value, source_text)
             if problem:
@@ -189,6 +225,28 @@ class ExtractionService:
         return ExtractionResult(candidates=list(best.values()), warnings=warnings)
 
     @staticmethod
+    def _reconcile_with_evidence(
+        path: str, value: str, evidence: Optional[str]
+    ) -> tuple[str, Optional[str]]:
+        """Para montos, fechas y modalidad, el valor debe salir de la evidencia citada.
+
+        Si el modelo lo transcribió mal pero la evidencia tiene una única lectura
+        posible, se usa esa lectura (determinista); si hay varias o ninguna, el
+        valor se deja como está y ``_grounding_problem`` limitará la confianza.
+        """
+        name = path.split(".", 1)[1]
+        if name not in _EVIDENCE_DERIVED_FIELDS or not (evidence or "").strip():
+            return value, None
+        readings = set(_evidence_values(name, evidence or ""))
+        canonical = ValidationService.canonical
+        if any(canonical(path, r) == canonical(path, value) for r in readings):
+            return value, None
+        if len(readings) == 1:
+            (reading,) = readings
+            return reading, f"valor corregido según la evidencia ('{value}' -> '{reading}')"
+        return value, None
+
+    @staticmethod
     def _grounding_problem(
         path: str, item: ExtractedField, value: str, source_text: Optional[str]
     ) -> Optional[str]:
@@ -200,6 +258,11 @@ class ExtractionService:
             return "la evidencia citada no figura en la fuente"
 
         name = path.split(".", 1)[1]
+        if name in _EVIDENCE_DERIVED_FIELDS:
+            canonical = ValidationService.canonical
+            readings = _evidence_values(name, evidence)
+            if not any(canonical(path, r) == canonical(path, value) for r in readings):
+                return "el valor no se puede verificar con la evidencia"
         if name in _DIGIT_FIELDS and _digits(value) not in _digits(evidence):
             return "el valor no coincide con la evidencia"
         if name in _FREE_TEXT_FIELDS and _norm_text(value) not in _norm_text(evidence):
