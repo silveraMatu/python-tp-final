@@ -3,6 +3,18 @@ name = "python-trabajo-final"
 version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = [
+    "docxtpl>=0.20.2",
     "fastapi>=0.162.4",
+    "num2words>=0.5.14",
     "pydantic>=2.14.3",
+    "pydantic-settings>=2.16.2",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

@@ -1,0 +1,176 @@
+from __future__ import annotations
+
+from datetime import date
+from decimal import Decimal
+from pathlib import Path
+
+import pytest
+from docx import Document
+
+from app.core.exceptions import (
+    ContractRenderError,
+    IncompleteContractDataError,
+    TemplateNotFoundError,
+    UnsupportedModalityError,
+)
+from app.schemas.contract import ContractData, EmploymentType, FieldValidation
+from app.services.template_service import (
+    STATIC_CLAUSES,
+    ContractTemplateService,
+    amount_in_words,
+    format_ars,
+    format_dni,
+)
+
+
+@pytest.fixture
+def service() -> ContractTemplateService:
+    return ContractTemplateService(city="Córdoba", today=lambda: date(2026, 11, 3))
+
+
+@pytest.fixture
+def template_path(service: ContractTemplateService, tmp_path: Path) -> str:
+    path = tmp_path / "plantilla.docx"
+    service.init_base_template(str(path))
+    return str(path)
+
+
+def _all_text(path: str) -> str:
+    document = Document(path)
+    chunks = [p.text for p in document.paragraphs]
+    for table in document.tables:
+        for row in table.rows:
+            chunks.extend(cell.text for cell in row.cells)
+    return "\n".join(chunks)
+
+
+def test_formatters() -> None:
+    assert format_dni("30123456") == "30.123.456"
+    assert format_dni("5123456") == "5.123.456"
+    assert format_ars(Decimal("2500000")) == "$ 2.500.000"
+    assert format_ars(Decimal("2500000.5")) == "$ 2.500.000,50"
+    assert amount_in_words(Decimal("2500000")) == "dos millones quinientos mil"
+    assert amount_in_words(Decimal("31000")) == "treinta y un mil"
+    assert amount_in_words(Decimal("1500.25")) == "mil quinientos con 25/100"
+
+
+def test_template_has_all_authorized_clauses(
+    service: ContractTemplateService, template_path: str
+) -> None:
+    service.verify_template(template_path)
+    text = _all_text(template_path)
+    for clause in STATIC_CLAUSES:
+        assert clause.heading in text
+        assert clause.body in text
+    assert len(STATIC_CLAUSES) == 8
+    assert len({c.sha256 for c in STATIC_CLAUSES}) == 8
+
+
+def test_render_contract_injects_values(
+    service: ContractTemplateService, template_path: str, contract: ContractData, tmp_path: Path
+) -> None:
+    result = service.render_contract(contract, template_path, str(tmp_path / "out" / "c.docx"))
+
+    assert Path(result).is_absolute()
+    text = _all_text(result)
+    assert "{{" not in text and "{%" not in text
+    for expected in (
+        "En la ciudad de Córdoba, a los 3 días del mes de noviembre de 2026",
+        "HumanIA S.A.",
+        "CUIT 30-71234567-1",
+        "Juan Pérez, DNI 30.123.456",
+        "15/03/1995",
+        "09/11/2026",
+        "$ 2.500.000 (pesos argentinos, dos millones quinientos mil)",
+        "en el puesto de Desarrollador de Software,",
+        "Contrato por tiempo indeterminado",
+    ):
+        assert expected in text, expected
+
+
+def test_render_escapes_special_characters(
+    service: ContractTemplateService, template_path: str, contract: ContractData, tmp_path: Path
+) -> None:
+    assert contract.company is not None
+    contract.company = contract.company.model_copy(update={"razon_social": "Pérez & Hijos <S.R.L.>"})
+    result = service.render_contract(contract, template_path, str(tmp_path / "c.docx"))
+    assert "Pérez & Hijos <S.R.L.>" in _all_text(result)
+
+
+def test_incomplete_contract_is_rejected(
+    service: ContractTemplateService, template_path: str, tmp_path: Path
+) -> None:
+    output = tmp_path / "c.docx"
+    with pytest.raises(IncompleteContractDataError) as info:
+        service.render_contract(ContractData(), template_path, str(output))
+    assert "employee.dni" in info.value.missing_fields
+    assert not output.exists()
+
+
+def test_flagged_contract_is_rejected(
+    service: ContractTemplateService, template_path: str, contract: ContractData, tmp_path: Path
+) -> None:
+    contract.validation_flags.append(
+        FieldValidation(field_name="employee.dni", is_valid=False, confidence_score=0.3)
+    )
+    with pytest.raises(IncompleteContractDataError) as info:
+        service.render_contract(contract, template_path, str(tmp_path / "c.docx"))
+    assert info.value.invalid_fields == ["employee.dni"]
+
+
+def test_missing_template(
+    service: ContractTemplateService, contract: ContractData, tmp_path: Path
+) -> None:
+    with pytest.raises(TemplateNotFoundError):
+        service.render_contract(contract, str(tmp_path / "nope.docx"), str(tmp_path / "c.docx"))
+
+
+def test_unsupported_modality(
+    service: ContractTemplateService, template_path: str, contract: ContractData, tmp_path: Path
+) -> None:
+    assert contract.terms is not None
+    contract.terms = contract.terms.model_copy(update={"modalidad": EmploymentType.FIXED_TERM})
+    with pytest.raises(UnsupportedModalityError):
+        service.render_contract(contract, template_path, str(tmp_path / "c.docx"))
+
+
+def test_tampered_template_is_rejected(
+    service: ContractTemplateService, template_path: str, contract: ContractData, tmp_path: Path
+) -> None:
+    document = Document(template_path)
+    target = next(p for p in document.paragraphs if p.text == STATIC_CLAUSES[5].body)
+    target.runs[0].text = "EL EMPLEADO no tiene deber de confidencialidad."
+    tampered = tmp_path / "tampered.docx"
+    document.save(str(tampered))
+
+    output = tmp_path / "c.docx"
+    with pytest.raises(ContractRenderError, match="SEXTA"):
+        service.render_contract(contract, str(tampered), str(output))
+    assert not output.exists()
+
+
+def test_extra_clause_in_template_is_rejected(
+    service: ContractTemplateService, template_path: str, tmp_path: Path
+) -> None:
+    document = Document(template_path)
+    document.add_paragraph("NOVENA – Cláusula inventada.")
+    tampered = tmp_path / "tampered.docx"
+    document.save(str(tampered))
+    with pytest.raises(ContractRenderError, match="no autorizada"):
+        service.verify_template(str(tampered))
+
+
+def test_template_with_unknown_variable_fails_and_cleans_up(
+    service: ContractTemplateService, contract: ContractData, tmp_path: Path
+) -> None:
+    path = tmp_path / "base.docx"
+    service.init_base_template(str(path))
+    document = Document(str(path))
+    document.add_paragraph("{{ employee.no_existe }}")
+    broken = tmp_path / "broken.docx"
+    document.save(str(broken))
+
+    output = tmp_path / "c.docx"
+    with pytest.raises(ContractRenderError):
+        service.render_contract(contract, str(broken), str(output))
+    assert not output.exists()
