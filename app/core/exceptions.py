@@ -74,3 +74,19 @@ class ContractNotFoundError(HumanIAError):
     def __init__(self, contract_id: str) -> None:
         self.contract_id = contract_id
         super().__init__(f"No se encontró el contrato {contract_id}")
+
+
+class ContractAlreadyExistsError(HumanIAError):
+    """Ya existe un contrato con el identificador indicado."""
+
+    def __init__(self, contract_id: str) -> None:
+        self.contract_id = contract_id
+        super().__init__(f"Ya existe un contrato con el identificador {contract_id}")
+
+
+class ConflictNotFoundError(HumanIAError):
+    """El campo indicado no tiene un conflicto pendiente de confirmación."""
+
+    def __init__(self, field_name: str) -> None:
+        self.field_name = field_name
+        super().__init__(f"No hay un conflicto pendiente para el campo {field_name}")

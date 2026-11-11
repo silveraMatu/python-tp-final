@@ -295,6 +295,14 @@ class ContractData(BaseModel):
         description="Campos requeridos aún no cargados (ver get_missing_fields()).",
         examples=[["employee.dni", "terms.puesto_funcion"]],
     )
+    collected_values: Dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "Valores aceptados por campo (ruta con punto), aún sin ensamblar en las secciones. "
+            "Permite recolectar los datos de forma incremental."
+        ),
+        examples=[{"employee.nombre": "Juan", "employee.dni": "30123456"}],
+    )
 
     # Secciones requeridas -> modelo que las define (para enumerar campos faltantes).
     _REQUIRED_SECTIONS: ClassVar[Dict[str, Type[BaseModel]]] = {
@@ -307,15 +315,19 @@ class ContractData(BaseModel):
         missing: List[str] = []
         for section, model in self._REQUIRED_SECTIONS.items():
             if getattr(self, section) is None:
-                missing.extend(f"{section}.{name}" for name in model.model_fields)
+                missing.extend(
+                    path
+                    for name in model.model_fields
+                    if (path := f"{section}.{name}") not in self.collected_values
+                )
         return missing
 
     def get_missing_fields(self) -> List[str]:
         """Devuelve (y sincroniza en ``missing_fields``) los campos requeridos faltantes.
 
-        Si una sección está ausente se listan todos sus campos con ruta con punto
-        (p. ej. ``"employee.dni"``). Una sección presente ya fue validada por
-        Pydantic, por lo que sus campos están completos.
+        Si una sección está ausente se listan los campos que aún no figuran en
+        ``collected_values`` con ruta con punto (p. ej. ``"employee.dni"``). Una
+        sección presente ya fue validada por Pydantic, por lo que está completa.
         """
         missing = self._compute_missing_fields()
         self.missing_fields = missing
@@ -332,7 +344,9 @@ class ContractData(BaseModel):
         Una validación cuenta como error si ``is_valid`` es False, su severidad es
         ``ERROR`` o reporta un conflicto.
         """
-        if self._compute_missing_fields():
+        if self._compute_missing_fields() or any(
+            getattr(self, section) is None for section in self._REQUIRED_SECTIONS
+        ):
             return False
         return not any(
             (not flag.is_valid)
