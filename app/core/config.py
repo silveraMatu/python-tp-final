@@ -25,6 +25,26 @@ class Settings(BaseSettings):
         description="Plantilla .docx aprobada.",
     )
     city: str = Field(default="Córdoba", description="Ciudad de celebración del contrato.")
+    ollama_host: str = Field(default="http://localhost:11434", description="URL del servidor Ollama.")
+    ollama_text_model: str = Field(default="qwen2.5:3b", description="Modelo para texto.")
+    ollama_vision_model: str = Field(
+        default="qwen2.5vl:3b", description="Modelo de visión para imágenes y PDFs escaneados."
+    )
+    ollama_timeout: float = Field(
+        default=300.0, gt=0, description="Timeout (s) por llamada; holgado para inferencia en CPU."
+    )
+    extraction_max_retries: int = Field(
+        default=2, ge=0, le=5, description="Reintentos ante una respuesta inválida del modelo."
+    )
+    max_upload_bytes: int = Field(
+        default=15 * 1024 * 1024, gt=0, description="Tamaño máximo de un archivo subido."
+    )
+    max_document_pages: int = Field(
+        default=3, ge=1, le=10, description="Páginas máximas que se procesan de un PDF."
+    )
+    max_image_side: int = Field(
+        default=1280, ge=256, description="Lado mayor (px) al que se reduce cada imagen."
+    )
     confidence_threshold: float = Field(
         default=0.80,
         ge=0.0,

@@ -118,7 +118,7 @@ class ValidationService:
             return self._rejected(candidate, errors)
 
         previous = contract.collected_values.get(path, _MISSING)
-        differs = previous is not _MISSING and self._canonical(path, previous) != self._canonical(
+        differs = previous is not _MISSING and self.canonical(path, previous) != self.canonical(
             path, candidate.value
         )
         if previous is not _MISSING and not differs:
@@ -224,7 +224,7 @@ class ValidationService:
         return CandidateEvaluation(candidate, Outcome.REJECTED, flag)
 
     @staticmethod
-    def _canonical(path: str, value: Any) -> object:
+    def canonical(path: str, value: Any) -> object:
         """Forma normalizada para comparar valores sin falsos conflictos (formato, mayúsculas)."""
         section, name = path.split(".", 1)
         if name in _DIGITS_ONLY_FIELDS:

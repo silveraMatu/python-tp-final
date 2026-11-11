@@ -90,3 +90,15 @@ class ConflictNotFoundError(HumanIAError):
     def __init__(self, field_name: str) -> None:
         self.field_name = field_name
         super().__init__(f"No hay un conflicto pendiente para el campo {field_name}")
+
+
+class UnsupportedDocumentError(HumanIAError):
+    """El archivo subido no es un PDF o imagen soportado, o excede los límites."""
+
+
+class LLMUnavailableError(HumanIAError):
+    """No se pudo comunicar con el servidor de modelos (Ollama)."""
+
+
+class ExtractionError(HumanIAError):
+    """El modelo no devolvió una extracción válida tras los reintentos."""

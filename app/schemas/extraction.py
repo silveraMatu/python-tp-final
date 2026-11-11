@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, List, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class FieldCandidate(BaseModel):
@@ -32,3 +32,64 @@ class FieldCandidate(BaseModel):
         description="Origen del dato (p. ej. 'user', 'ocr:dni', 'llm').",
         examples=["ocr:dni"],
     )
+
+
+FieldPath = Literal[
+    "employee.nombre",
+    "employee.apellido",
+    "employee.dni",
+    "employee.cuil",
+    "employee.domicilio",
+    "employee.fecha_nacimiento",
+    "company.razon_social",
+    "company.cuit",
+    "company.domicilio_legal",
+    "company.apoderado_nombre",
+    "company.apoderado_cargo",
+    "terms.puesto_funcion",
+    "terms.fecha_inicio",
+    "terms.modalidad",
+    "terms.remuneracion_bruta",
+    "terms.jornada_laboral",
+    "terms.lugar_trabajo",
+]
+
+
+class ExtractedField(BaseModel):
+    """Un dato tal como lo devuelve el LLM (salida restringida por JSON Schema).
+
+    ``field_name`` solo admite rutas del esquema del contrato: el modelo no puede
+    proponer campos nuevos.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    field_name: FieldPath = Field(..., description="Ruta del campo del contrato.")
+    value: Optional[str] = Field(
+        default=None, description="Valor encontrado, o null si el dato no aparece."
+    )
+    evidence: Optional[str] = Field(
+        default=None,
+        description="Fragmento literal del texto o documento del que se leyó el valor.",
+    )
+    confidence: float = Field(
+        default=0.0, ge=0.0, le=1.0, description="Confianza de 0.0 a 1.0 en el valor."
+    )
+
+    @field_validator("confidence", mode="before")
+    @classmethod
+    def _clamp_confidence(cls, value: Any) -> Any:
+        if isinstance(value, bool):
+            return value
+        try:
+            return min(1.0, max(0.0, float(value)))
+        except (TypeError, ValueError):
+            return value
+
+
+class LLMExtractionPayload(BaseModel):
+    """Respuesta completa del LLM: lista de datos encontrados."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    fields: List[ExtractedField] = Field(default_factory=list)
