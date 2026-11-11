@@ -26,7 +26,9 @@ class Settings(BaseSettings):
     )
     city: str = Field(default="Córdoba", description="Ciudad de celebración del contrato.")
     ollama_host: str = Field(default="http://localhost:11434", description="URL del servidor Ollama.")
-    ollama_text_model: str = Field(default="qwen2.5:3b", description="Modelo para texto.")
+    ollama_text_model: str = Field(
+        default="qwen2.5vl:3b", description="Modelo para texto (el mismo de visión evita cargar dos)."
+    )
     ollama_vision_model: str = Field(
         default="qwen2.5vl:3b", description="Modelo de visión para imágenes y PDFs escaneados."
     )

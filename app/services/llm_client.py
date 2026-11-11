@@ -40,7 +40,7 @@ class OllamaClient:
     def __init__(
         self,
         host: str = "http://localhost:11434",
-        text_model: str = "qwen2.5:3b",
+        text_model: str = "qwen2.5vl:3b",
         vision_model: str = "qwen2.5vl:3b",
         timeout: float = 300.0,
         client: Optional[Client] = None,
