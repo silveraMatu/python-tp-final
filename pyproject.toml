@@ -6,6 +6,7 @@ dependencies = [
     "chromadb>=1.5.9",
     "docxtpl>=0.20.2",
     "fastapi>=0.162.4",
+    "langgraph>=1.2.21",
     "num2words>=0.5.14",
     "ollama>=0.6.3",
     "pydantic>=2.14.3",
