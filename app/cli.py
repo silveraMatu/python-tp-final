@@ -4,6 +4,8 @@
 - ``ask "pregunta"``: consulta la base de conocimiento.
 - ``seed ARCHIVO...``: copia archivos a la carpeta de conocimiento.
 - ``apikey NOMBRE ROL``: genera una API key y la entrada para ``HUMANIA_API_USERS``.
+- ``demo-seed``: crea datos de demostración (usuarios con keys conocidas y contratos en cada estado).
+- ``openapi``: escribe el esquema de la API en ``docs/openapi.json``.
 - ``chat``: conversa con el agente en la terminal (``/adjuntar RUTA`` sube un archivo,
   ``/salir`` termina).
 """
@@ -34,6 +36,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     seed = commands.add_parser("seed", help="Copia archivos a la carpeta de conocimiento")
     seed.add_argument("files", nargs="+", type=Path)
     commands.add_parser("chat", help="Conversa con el agente")
+    demo = commands.add_parser("demo-seed", help="Crea datos de demostración (solo uso local)")
+    demo.add_argument("--dir", type=Path, default=Path("data/demo"))
+    demo.add_argument("--force", action="store_true", help="Recrear si ya existe")
+    openapi = commands.add_parser("openapi", help="Escribe el esquema OpenAPI")
+    openapi.add_argument("--out", type=Path, default=Path("docs/openapi.json"))
     apikey = commands.add_parser("apikey", help="Genera una API key y su entrada de configuración")
     apikey.add_argument("name")
     apikey.add_argument("role", choices=["REQUESTER", "REVIEWER"])
@@ -44,6 +51,33 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         entry = {"name": args.name, "role": args.role, "key_sha256": digest}
         print(f"API key (se muestra una sola vez): {key}")
         print(f"Entrada para HUMANIA_API_USERS: {json.dumps(entry)}")
+        return 0
+
+    if args.command == "demo-seed":
+        from app.demo import DEMO_USERS, seed_demo
+
+        try:
+            info = seed_demo(args.dir, force=args.force)
+        except FileExistsError as exc:
+            print(exc)
+            return 1
+        print(f"Datos de demostración en {info.directory} (SOLO USO LOCAL: las keys son públicas)\n")
+        for contract in info.contracts:
+            print(f"  {contract.id}  {contract.owner:7} {contract.status:21} {contract.description}")
+        print("\nUsuarios (header X-API-Key):")
+        for name, (role, key) in DEMO_USERS.items():
+            print(f"  {name:7} {role:10} {key}")
+        print(f"\nLevantar la API:\n  uv run uvicorn app.api.main:app --env-file {info.env_file}")
+        return 0
+
+    if args.command == "openapi":
+        from app.api.main import app as api_app
+
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        args.out.write_text(
+            json.dumps(api_app.openapi(), ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
+        print(f"Esquema escrito en {args.out}")
         return 0
 
     settings = get_settings()

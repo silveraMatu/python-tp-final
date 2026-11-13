@@ -1,0 +1,1586 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "HumanIA – Contratos laborales",
+    "description": "API del agente de contratos laborales de HumanIA S.A.\n\n- Autenticación: header `X-API-Key`. Roles: **REQUESTER** (arma el contrato) y\n  **REVIEWER** (aprueba, rechaza o pide cambios).\n- El texto de las cláusulas es el aprobado por la empresa: ni el agente ni la API lo modifican.\n- La aprobación es siempre una decisión humana (`POST /contracts/{id}/review`).\n",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": [
+          "general"
+        ],
+        "summary": "Health",
+        "description": "Estado del servicio (sin autenticación).",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object",
+                  "title": "Response Health Health Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/me": {
+      "get": {
+        "tags": [
+          "general"
+        ],
+        "summary": "Me",
+        "description": "Usuario autenticado y su rol.",
+        "operationId": "me_me_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeOut"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/templates": {
+      "get": {
+        "tags": [
+          "general"
+        ],
+        "summary": "Templates",
+        "description": "Plantillas por modalidad: cuáles están aprobadas y qué campos exigen.",
+        "operationId": "templates_templates_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TemplateOut"
+                  },
+                  "type": "array",
+                  "title": "Response Templates Templates Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/knowledge/query": {
+      "post": {
+        "tags": [
+          "general"
+        ],
+        "summary": "Query Knowledge",
+        "description": "Consulta la documentación institucional y las cláusulas aprobadas (con fuentes).",
+        "operationId": "query_knowledge_knowledge_query_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KnowledgeQueryIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeAnswerOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/contracts": {
+      "post": {
+        "tags": [
+          "contratos"
+        ],
+        "summary": "Create Contract",
+        "description": "Crea un borrador vacío a nombre del solicitante.",
+        "operationId": "create_contract_contracts_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContractOut"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "contratos"
+        ],
+        "summary": "List Contracts",
+        "description": "Contratos visibles para el usuario (más nuevos primero).\n\nEl solicitante ve los suyos; el revisor, los que están en revisión o ya decididos.",
+        "operationId": "list_contracts_contracts_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status_filter",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ContractStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status Filter"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ContractOut"
+                  },
+                  "title": "Response List Contracts Contracts Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/contracts/{contract_id}": {
+      "get": {
+        "tags": [
+          "contratos"
+        ],
+        "summary": "Get Contract",
+        "description": "Estado actual del contrato, sus datos y las acciones disponibles.",
+        "operationId": "get_contract_contracts__contract_id__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "contract_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Contract Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContractOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/contracts/{contract_id}/messages": {
+      "post": {
+        "tags": [
+          "contratos"
+        ],
+        "summary": "Send Message",
+        "description": "Un turno de conversación: texto y/o archivos (PDF, PNG, JPG, WEBP).\n\nEl mensaje y la respuesta quedan guardados en el historial (``GET .../messages``) y los\narchivos se conservan para poder verlos de nuevo (``GET .../attachments/{id}``).",
+        "operationId": "send_message_contracts__contract_id__messages_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "contract_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Contract Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_send_message_contracts__contract_id__messages_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "contratos"
+        ],
+        "summary": "Get Messages",
+        "description": "Historial del chat en orden cronológico, paginado hacia atrás.\n\nPedí sin ``before`` para los últimos ``limit`` mensajes; si ``has_more`` es true, volvé a\npedir con ``before=next_before`` para los anteriores. Solo lo ve el solicitante dueño.",
+        "operationId": "get_messages_contracts__contract_id__messages_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "contract_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Contract Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Traer los anteriores a este seq",
+              "title": "Before"
+            },
+            "description": "Traer los anteriores a este seq"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/contracts/{contract_id}/attachments/{attachment_id}": {
+      "get": {
+        "tags": [
+          "contratos"
+        ],
+        "summary": "Get Attachment",
+        "description": "Archivo que el solicitante adjuntó a un mensaje (se muestra en línea).",
+        "operationId": "get_attachment_contracts__contract_id__attachments__attachment_id__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "contract_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Contract Id"
+            }
+          },
+          {
+            "name": "attachment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Attachment Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/contracts/{contract_id}/conflicts/resolve": {
+      "post": {
+        "tags": [
+          "contratos"
+        ],
+        "summary": "Resolve Conflict",
+        "description": "Confirma o descarta un dato pendiente (equivale a responder «sí»/«no» en el chat).",
+        "operationId": "resolve_conflict_contracts__contract_id__conflicts_resolve_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "contract_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Contract Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConflictResolutionIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContractOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/contracts/{contract_id}/submit": {
+      "post": {
+        "tags": [
+          "contratos"
+        ],
+        "summary": "Submit For Review",
+        "description": "Envía el borrador a revisión humana (requiere datos completos y sin conflictos).",
+        "operationId": "submit_for_review_contracts__contract_id__submit_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "contract_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Contract Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContractOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/contracts/{contract_id}/history": {
+      "get": {
+        "tags": [
+          "contratos"
+        ],
+        "summary": "Get History",
+        "description": "Auditoría del contrato en orden cronológico.",
+        "operationId": "get_history_contracts__contract_id__history_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "contract_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Contract Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AuditEntryOut"
+                  },
+                  "title": "Response Get History Contracts  Contract Id  History Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/contracts/{contract_id}/review": {
+      "post": {
+        "tags": [
+          "revisión"
+        ],
+        "summary": "Review Contract",
+        "description": "Registra la decisión del revisor sobre un contrato pendiente de revisión.\n\n- ``APPROVE``: aprueba (el documento final se emite al descargarlo).\n- ``REJECT``: rechaza; el contrato queda cerrado.\n- ``REQUEST_CHANGES``: lo devuelve al solicitante para completar o corregir datos.",
+        "operationId": "review_contract_contracts__contract_id__review_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "contract_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Contract Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContractOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/contracts/{contract_id}/document": {
+      "get": {
+        "tags": [
+          "documentos"
+        ],
+        "summary": "Download Document",
+        "description": "Descarga el documento.\n\n- ``version=draft``: PDF preliminar con marca de BORRADOR (solo antes de la decisión).\n- ``version=final``: PDF o DOCX del contrato aprobado; se emite una sola vez y las\n  descargas siguientes entregan el mismo archivo.\n\nEl encabezado ``X-Verification-Code`` trae el código impreso en el pie del PDF.",
+        "operationId": "download_document_contracts__contract_id__document_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "contract_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Contract Id"
+            }
+          },
+          {
+            "name": "version",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "draft",
+                "final"
+              ],
+              "type": "string",
+              "default": "final",
+              "title": "Version"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "pdf",
+                "docx"
+              ],
+              "type": "string",
+              "default": "pdf",
+              "title": "Format"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/pdf": {},
+              "application/vnd.openxmlformats-officedocument.wordprocessingml.document": {}
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/contracts/{contract_id}/verification": {
+      "get": {
+        "tags": [
+          "documentos"
+        ],
+        "summary": "Verify Final Document",
+        "description": "Comprueba que el documento final emitido no fue alterado desde su emisión.",
+        "operationId": "verify_final_document_contracts__contract_id__verification_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "contract_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Contract Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificationOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AttachmentMeta": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename",
+            "examples": [
+              "dni.png"
+            ]
+          },
+          "media_type": {
+            "type": "string",
+            "title": "Media Type",
+            "examples": [
+              "image/png"
+            ]
+          },
+          "size_bytes": {
+            "type": "integer",
+            "title": "Size Bytes"
+          },
+          "sha256": {
+            "type": "string",
+            "title": "Sha256"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url",
+            "description": "Ruta relativa para descargarlo (requiere X-API-Key)."
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "filename",
+          "media_type",
+          "size_bytes",
+          "sha256",
+          "url"
+        ],
+        "title": "AttachmentMeta",
+        "description": "Archivo adjunto a un mensaje del usuario."
+      },
+      "AuditEntryOut": {
+        "properties": {
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Timestamp"
+          },
+          "actor": {
+            "type": "string",
+            "title": "Actor"
+          },
+          "action": {
+            "type": "string",
+            "title": "Action"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ContractStatus"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "timestamp",
+          "actor",
+          "action",
+          "status"
+        ],
+        "title": "AuditEntryOut",
+        "description": "Entrada de la auditoría de un contrato."
+      },
+      "Body_send_message_contracts__contract_id__messages_post": {
+        "properties": {
+          "message": {
+            "type": "string",
+            "maxLength": 20000,
+            "title": "Message",
+            "default": ""
+          },
+          "files": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "contentMediaType": "application/octet-stream"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Files"
+          }
+        },
+        "type": "object",
+        "title": "Body_send_message_contracts__contract_id__messages_post"
+      },
+      "ChatMessage": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "seq": {
+            "type": "integer",
+            "title": "Seq",
+            "description": "Orden dentro del contrato (1, 2, 3, ...)."
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Timestamp"
+          },
+          "role": {
+            "$ref": "#/components/schemas/ChatRole"
+          },
+          "actor": {
+            "type": "string",
+            "title": "Actor",
+            "description": "Usuario que originó el mensaje; 'assistant' para el agente."
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "intent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intent",
+            "description": "Solo en respuestas del agente."
+          },
+          "classification_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Classification Source"
+          },
+          "sources": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Sources",
+            "description": "Fuentes citadas (consultas)."
+          },
+          "documents": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentRef"
+            },
+            "type": "array",
+            "title": "Documents"
+          },
+          "attachments": {
+            "items": {
+              "$ref": "#/components/schemas/AttachmentMeta"
+            },
+            "type": "array",
+            "title": "Attachments"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "seq",
+          "timestamp",
+          "role",
+          "actor",
+          "text"
+        ],
+        "title": "ChatMessage",
+        "description": "Mensaje del historial."
+      },
+      "ChatPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ChatMessage"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More",
+            "description": "Hay mensajes anteriores a los devueltos."
+          },
+          "next_before": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Before",
+            "description": "Valor para el parámetro 'before' de la página anterior."
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "has_more"
+        ],
+        "title": "ChatPage",
+        "description": "Página del historial, en orden cronológico (más antiguo primero)."
+      },
+      "ChatRole": {
+        "type": "string",
+        "enum": [
+          "user",
+          "agent",
+          "system"
+        ],
+        "title": "ChatRole",
+        "description": "Quién dice cada mensaje."
+      },
+      "ConflictResolutionIn": {
+        "properties": {
+          "field_name": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Field Name",
+            "examples": [
+              "employee.dni"
+            ]
+          },
+          "accept_new": {
+            "type": "boolean",
+            "title": "Accept New",
+            "description": "True usa el valor leído; False lo descarta."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "field_name",
+          "accept_new"
+        ],
+        "title": "ConflictResolutionIn",
+        "description": "Decisión explícita sobre un dato pendiente."
+      },
+      "ContractOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ContractStatus"
+          },
+          "status_label": {
+            "type": "string",
+            "title": "Status Label"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "is_complete": {
+            "type": "boolean",
+            "title": "Is Complete"
+          },
+          "missing_fields": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Missing Fields"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/FieldValueOut"
+            },
+            "type": "array",
+            "title": "Fields"
+          },
+          "pending_conflicts": {
+            "items": {
+              "$ref": "#/components/schemas/PendingConflictOut"
+            },
+            "type": "array",
+            "title": "Pending Conflicts"
+          },
+          "issues": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Issues",
+            "description": "Inconsistencias entre campos que bloquean el envío."
+          },
+          "allowed_actions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Allowed Actions",
+            "description": "Acciones disponibles para el usuario actual."
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "status_label",
+          "created_by",
+          "is_complete",
+          "missing_fields",
+          "fields",
+          "pending_conflicts"
+        ],
+        "title": "ContractOut",
+        "description": "Estado de un contrato."
+      },
+      "ContractStatus": {
+        "type": "string",
+        "enum": [
+          "INITIAL",
+          "COLLECTING_DATA",
+          "CONFLICT_DETECTED",
+          "PENDING_HUMAN_REVIEW",
+          "APPROVED",
+          "REJECTED"
+        ],
+        "title": "ContractStatus",
+        "description": "Estado del contrato dentro del flujo del agente."
+      },
+      "DocumentLinkOut": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "final"
+            ],
+            "title": "Kind"
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "pdf",
+              "docx"
+            ],
+            "title": "Format"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "format",
+          "url"
+        ],
+        "title": "DocumentLinkOut",
+        "description": "Enlace de descarga (relativo a la API)."
+      },
+      "DocumentRef": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "final"
+            ],
+            "title": "Kind"
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "pdf",
+              "docx"
+            ],
+            "title": "Format"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "format",
+          "url"
+        ],
+        "title": "DocumentRef",
+        "description": "Documento generado a partir de una respuesta (p. ej. el borrador)."
+      },
+      "FieldValueOut": {
+        "properties": {
+          "field_name": {
+            "type": "string",
+            "title": "Field Name",
+            "examples": [
+              "employee.dni"
+            ]
+          },
+          "label": {
+            "type": "string",
+            "title": "Label",
+            "examples": [
+              "DNI del empleado/a"
+            ]
+          },
+          "value": {
+            "type": "string",
+            "title": "Value",
+            "examples": [
+              "30.123.456"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "field_name",
+          "label",
+          "value"
+        ],
+        "title": "FieldValueOut",
+        "description": "Dato cargado, listo para mostrar."
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "KnowledgeAnswerOut": {
+        "properties": {
+          "answer": {
+            "type": "string",
+            "title": "Answer"
+          },
+          "found": {
+            "type": "boolean",
+            "title": "Found"
+          },
+          "sources": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Sources"
+          }
+        },
+        "type": "object",
+        "required": [
+          "answer",
+          "found",
+          "sources"
+        ],
+        "title": "KnowledgeAnswerOut",
+        "description": "Respuesta de la documentación, con sus fuentes."
+      },
+      "KnowledgeQueryIn": {
+        "properties": {
+          "question": {
+            "type": "string",
+            "maxLength": 1000,
+            "minLength": 3,
+            "title": "Question"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "question"
+        ],
+        "title": "KnowledgeQueryIn",
+        "description": "Consulta a la documentación institucional."
+      },
+      "MeOut": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "REQUESTER",
+              "REVIEWER"
+            ],
+            "title": "Role"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "role"
+        ],
+        "title": "MeOut",
+        "description": "Usuario autenticado."
+      },
+      "MessageOut": {
+        "properties": {
+          "reply": {
+            "type": "string",
+            "title": "Reply"
+          },
+          "intent": {
+            "type": "string",
+            "title": "Intent"
+          },
+          "classification_source": {
+            "type": "string",
+            "title": "Classification Source"
+          },
+          "contract": {
+            "$ref": "#/components/schemas/ContractOut"
+          },
+          "documents": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentLinkOut"
+            },
+            "type": "array",
+            "title": "Documents"
+          },
+          "sources": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Sources"
+          },
+          "user_message": {
+            "$ref": "#/components/schemas/ChatMessage",
+            "description": "Tu mensaje, ya guardado en el historial."
+          },
+          "agent_message": {
+            "$ref": "#/components/schemas/ChatMessage",
+            "description": "La respuesta, ya guardada en el historial."
+          }
+        },
+        "type": "object",
+        "required": [
+          "reply",
+          "intent",
+          "classification_source",
+          "contract",
+          "user_message",
+          "agent_message"
+        ],
+        "title": "MessageOut",
+        "description": "Respuesta del agente a un mensaje."
+      },
+      "PendingConflictOut": {
+        "properties": {
+          "field_name": {
+            "type": "string",
+            "title": "Field Name"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "value": {
+            "type": "string",
+            "title": "Value",
+            "description": "Valor leído, pendiente de confirmar."
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail",
+            "description": "Motivo de la confirmación."
+          }
+        },
+        "type": "object",
+        "required": [
+          "field_name",
+          "label",
+          "value"
+        ],
+        "title": "PendingConflictOut",
+        "description": "Dato que espera la confirmación del usuario."
+      },
+      "ReviewIn": {
+        "properties": {
+          "decision": {
+            "type": "string",
+            "enum": [
+              "APPROVE",
+              "REJECT",
+              "REQUEST_CHANGES"
+            ],
+            "title": "Decision"
+          },
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "decision"
+        ],
+        "title": "ReviewIn",
+        "description": "Decisión del revisor humano."
+      },
+      "TemplateOut": {
+        "properties": {
+          "modality": {
+            "type": "string",
+            "title": "Modality"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          },
+          "required_fields": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Required Fields"
+          }
+        },
+        "type": "object",
+        "required": [
+          "modality",
+          "label",
+          "available",
+          "required_fields"
+        ],
+        "title": "TemplateOut",
+        "description": "Plantilla disponible (o no) para una modalidad."
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "VerificationOut": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          },
+          "problems": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Problems"
+          },
+          "verification_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verification Code"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ok",
+          "problems",
+          "verification_code"
+        ],
+        "title": "VerificationOut",
+        "description": "Resultado de verificar el documento final emitido."
+      }
+    },
+    "securitySchemes": {
+      "APIKeyHeader": {
+        "type": "apiKey",
+        "description": "API key del usuario",
+        "in": "header",
+        "name": "X-API-Key"
+      }
+    }
+  }
+}
