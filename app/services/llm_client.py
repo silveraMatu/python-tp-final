@@ -21,8 +21,9 @@ class LLMClient(Protocol):
         user: str,
         schema: Mapping[str, Any],
         images: Sequence[bytes] = (),
+        max_tokens: Optional[int] = None,
     ) -> str:
-        """Devuelve el texto JSON de la respuesta.
+        """Devuelve el texto JSON de la respuesta (``max_tokens`` limita lo que puede generar).
 
         Raises:
             LLMUnavailableError: el servidor no responde o el modelo no está disponible.
@@ -46,12 +47,14 @@ class OllamaClient:
         vision_model: str = "deepseek-v4.1-flash:cloud",
         timeout: float = 120.0,
         think: bool = False,
+        max_output_tokens: int = 1024,
         client: Optional[Client] = None,
     ) -> None:
         self._client = client if client is not None else Client(host=host, timeout=timeout)
         self._text_model = text_model
         self._vision_model = vision_model
         self._think = think
+        self._max_output_tokens = max_output_tokens
 
     def generate_json(
         self,
@@ -60,6 +63,7 @@ class OllamaClient:
         user: str,
         schema: Mapping[str, Any],
         images: Sequence[bytes] = (),
+        max_tokens: Optional[int] = None,
     ) -> str:
         model = self._vision_model if images else self._text_model
         user_message: dict[str, Any] = {"role": "user", "content": user}
@@ -70,7 +74,7 @@ class OllamaClient:
                 model=model,
                 messages=[{"role": "system", "content": system}, user_message],
                 format=dict(schema),
-                options={"temperature": 0},
+                options={"temperature": 0, "num_predict": min(max_tokens or self._max_output_tokens, self._max_output_tokens)},
                 think=self._think,
             )
         except ResponseError as exc:
@@ -100,4 +104,5 @@ def build_llm_client(settings: Settings) -> OllamaClient:
         vision_model=settings.ollama_vision_model,
         timeout=settings.ollama_timeout,
         think=settings.ollama_think,
+        max_output_tokens=settings.llm_max_output_tokens,
     )

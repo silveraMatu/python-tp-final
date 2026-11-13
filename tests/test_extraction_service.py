@@ -26,6 +26,7 @@ class FakeLLM:
         user: str,
         schema: Mapping[str, Any],
         images: Sequence[bytes] = (),
+        max_tokens: int | None = None,
     ) -> str:
         self.calls.append({"system": system, "user": user, "schema": schema, "images": images})
         return self._responses.pop(0)

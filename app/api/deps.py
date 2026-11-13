@@ -13,6 +13,7 @@ from fastapi.security import APIKeyHeader
 
 from app.api.auth import ApiKeyAuthenticator, ApiUser, Role
 from app.container import Services
+from app.security.rate_limit import SlidingWindowLimiter
 
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False, description="API key del usuario")
 
@@ -47,13 +48,29 @@ def get_locks(request: Request) -> ContractLocks:
     return locks
 
 
+def _client_key(request: Request) -> str:
+    return request.client.host if request.client else "desconocido"
+
+
 def current_user(
     request: Request, api_key: Annotated[Optional[str], Depends(_api_key_header)]
 ) -> ApiUser:
-    """Usuario autenticado por ``X-API-Key``; 401 si falta o no es válida."""
+    """Usuario autenticado por ``X-API-Key``; 401 si falta o no es válida.
+
+    Los intentos fallidos se limitan por cliente (frena la fuerza bruta sobre las keys).
+    """
+    failures: SlidingWindowLimiter = request.app.state.auth_failure_limiter
+    client = _client_key(request)
+    if failures.is_blocked(client):
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            "Demasiados intentos fallidos; esperá un momento",
+            headers={"Retry-After": str(failures.retry_after(client))},
+        )
     authenticator: ApiKeyAuthenticator = request.app.state.authenticator
     user = authenticator.authenticate(api_key)
     if user is None:
+        failures.hit(client)
         raise HTTPException(
             status.HTTP_401_UNAUTHORIZED,
             "API key ausente o inválida",
@@ -74,8 +91,21 @@ def require_reviewer(user: Annotated[ApiUser, Depends(current_user)]) -> ApiUser
     return user
 
 
+def limit_messages(request: Request, user: Annotated[ApiUser, Depends(require_requester)]) -> ApiUser:
+    """Solicitante autenticado que todavía no agotó su cupo de mensajes por minuto."""
+    limiter: SlidingWindowLimiter = request.app.state.message_limiter
+    if not limiter.hit(user.name):
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            "Enviaste demasiados mensajes seguidos; esperá un momento",
+            headers={"Retry-After": str(limiter.retry_after(user.name))},
+        )
+    return user
+
+
 ServicesDep = Annotated[Services, Depends(get_services)]
 LocksDep = Annotated[ContractLocks, Depends(get_locks)]
 UserDep = Annotated[ApiUser, Depends(current_user)]
 RequesterDep = Annotated[ApiUser, Depends(require_requester)]
 ReviewerDep = Annotated[ApiUser, Depends(require_reviewer)]
+MessageUserDep = Annotated[ApiUser, Depends(limit_messages)]

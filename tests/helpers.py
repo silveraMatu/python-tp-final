@@ -106,6 +106,7 @@ class ScriptedLLM:
         user: str,
         schema: Mapping[str, Any],
         images: Sequence[bytes] = (),
+        max_tokens: int | None = None,
     ) -> str:
         kind = next(name for text, name in self.KINDS.items() if text in system)
         self.calls.append(kind)

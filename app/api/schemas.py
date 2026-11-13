@@ -8,6 +8,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.repositories.chat import ChatMessage
 from app.schemas.contract import ContractStatus
 
 
@@ -64,6 +65,8 @@ class MessageOut(BaseModel):
     contract: ContractOut
     documents: List[DocumentLinkOut] = Field(default_factory=list)
     sources: List[str] = Field(default_factory=list)
+    user_message: ChatMessage = Field(..., description="Tu mensaje, ya guardado en el historial.")
+    agent_message: ChatMessage = Field(..., description="La respuesta, ya guardada en el historial.")
 
 
 class ConflictResolutionIn(BaseModel):

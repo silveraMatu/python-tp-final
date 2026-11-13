@@ -6,7 +6,7 @@ from uuid import UUID
 
 from fastapi import APIRouter
 
-from app.api import access
+from app.api import access, events
 from app.api.deps import LocksDep, ReviewerDep, ServicesDep
 from app.api.presenters import contract_out
 from app.api.schemas import ContractOut, ReviewIn
@@ -36,4 +36,8 @@ def review_contract(
             contract = services.contracts.review(
                 contract_id, body.decision == "APPROVE", user.name, body.comment
             )
+        # El solicitante no ve la auditoría: la decisión y el comentario le llegan por el chat.
+        services.chat.record_event(
+            contract_id, user.name, events.reviewed(user.name, body.decision, body.comment)
+        )
     return contract_out(contract, user)

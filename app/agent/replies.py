@@ -66,6 +66,15 @@ CONFIRMATION_UNCLEAR: Final[str] = (
 )
 NO_DATA_FOUND: Final[str] = "No encontré datos del contrato en tu mensaje."
 RAG_UNAVAILABLE: Final[str] = "La consulta de documentación no está disponible en este momento."
+SECURITY_REFUSAL: Final[str] = (
+    "No puedo procesar ese mensaje: incluye instrucciones que intentan cambiar mi funcionamiento "
+    "o pedir información interna, y no las voy a seguir. Si querés cargar datos del contrato, "
+    "escribilos de forma simple (por ejemplo: «El empleado se llama Juan Pérez, DNI 30123456»)."
+)
+DOCUMENT_DISCARDED: Final[str] = (
+    "Descarté «{name}» porque su contenido incluye instrucciones sospechosas. Si es un documento "
+    "legítimo, revisalo y volvé a subirlo."
+)
 LOCKED_PENDING: Final[str] = (
     "El contrato está en revisión humana y no admite cambios; si el revisor pide ajustes, "
     "se reabre para completar datos."

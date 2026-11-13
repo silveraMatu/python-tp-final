@@ -66,15 +66,22 @@ class ExtractedField(BaseModel):
 
     field_name: FieldPath = Field(..., description="Ruta del campo del contrato.")
     value: Optional[str] = Field(
-        default=None, description="Valor encontrado, o null si el dato no aparece."
+        default=None, max_length=300, description="Valor encontrado, o null si el dato no aparece."
     )
     evidence: Optional[str] = Field(
         default=None,
+        max_length=500,
         description="Fragmento literal del texto o documento del que se leyó el valor.",
     )
     confidence: float = Field(
         default=0.0, ge=0.0, le=1.0, description="Confianza de 0.0 a 1.0 en el valor."
     )
+
+    @field_validator("evidence", mode="before")
+    @classmethod
+    def _trim_evidence(cls, value: Any) -> Any:
+        """La evidencia solo sirve para contrastar con la fuente: un exceso se recorta, no falla."""
+        return value[:500] if isinstance(value, str) else value
 
     @field_validator("confidence", mode="before")
     @classmethod
@@ -92,4 +99,4 @@ class LLMExtractionPayload(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    fields: List[ExtractedField] = Field(default_factory=list)
+    fields: List[ExtractedField] = Field(default_factory=list, max_length=40)

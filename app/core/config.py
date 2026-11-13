@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     output_dir: Path = Field(
         default=Path("data/output"), description="Directorio de documentos generados."
     )
+    attachments_dir: Path = Field(
+        default=Path("data/attachments"), description="Carpeta de adjuntos del chat."
+    )
     template_path: Path = Field(
         default=Path("app/templates/contrato_trabajo_indeterminado.docx"),
         description="Plantilla .docx aprobada.",
@@ -94,6 +97,21 @@ class Settings(BaseSettings):
     )
     max_upload_files: int = Field(
         default=5, ge=1, le=20, description="Archivos máximos por mensaje."
+    )
+    max_message_chars: int = Field(
+        default=4000, ge=100, le=20000, description="Largo máximo de un mensaje del usuario."
+    )
+    max_reply_chars: int = Field(
+        default=1500, ge=200, le=10000, description="Largo máximo de una respuesta al usuario."
+    )
+    llm_max_output_tokens: int = Field(
+        default=1024, ge=64, le=8192, description="Tope de tokens que puede generar el modelo."
+    )
+    rate_limit_messages_per_minute: int = Field(
+        default=20, ge=1, description="Mensajes por minuto y usuario."
+    )
+    rate_limit_failed_auth_per_minute: int = Field(
+        default=10, ge=1, description="Intentos de autenticación fallidos por minuto y cliente."
     )
     confidence_threshold: float = Field(
         default=0.80,

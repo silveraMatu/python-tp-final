@@ -8,6 +8,9 @@ from fastapi import APIRouter, HTTPException, status
 
 from app.api.deps import ServicesDep, UserDep
 from app.api.schemas import KnowledgeAnswerOut, KnowledgeQueryIn, MeOut, TemplateOut
+from app.security.injection import scan
+from app.security.text import normalize_input
+from app.services.rag_service import BLOCKED_QUESTION
 from app.services.template_catalog import list_templates
 
 router = APIRouter(tags=["general"])
@@ -44,11 +47,14 @@ def query_knowledge(
     body: KnowledgeQueryIn, user: UserDep, services: ServicesDep
 ) -> KnowledgeAnswerOut:
     """Consulta la documentación institucional y las cláusulas aprobadas (con fuentes)."""
+    clean = normalize_input(body.question)
+    if scan(clean).blocked:  # también se filtra aquí: no depende de la implementación del RAG
+        return KnowledgeAnswerOut(answer=BLOCKED_QUESTION, found=False, sources=[])
     if services.rag is None:
         raise HTTPException(
             status.HTTP_503_SERVICE_UNAVAILABLE, "La consulta de documentación no está disponible"
         )
-    result = services.rag.answer(body.question)
+    result = services.rag.answer(clean)
     return KnowledgeAnswerOut(
         answer=result.answer,
         found=result.found,

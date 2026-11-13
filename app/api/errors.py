@@ -6,7 +6,9 @@ import logging
 from typing import Final, List, Tuple, Type
 
 from fastapi import FastAPI, Request, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.exceptions import (
     ConflictNotFoundError,
@@ -68,3 +70,42 @@ async def domain_error_handler(request: Request, exc: Exception) -> JSONResponse
 def register_error_handlers(app: FastAPI) -> None:
     """Registra el manejador para todas las excepciones de dominio."""
     app.add_exception_handler(HumanIAError, domain_error_handler)
+    app.add_exception_handler(StarletteHTTPException, http_error_handler)
+    app.add_exception_handler(RequestValidationError, validation_error_handler)
+
+
+_HTTP_CODES: Final[dict[int, str]] = {
+    400: "bad_request",
+    401: "unauthorized",
+    403: "forbidden",
+    404: "not_found",
+    405: "method_not_allowed",
+    413: "payload_too_large",
+    422: "validation_error",
+    429: "rate_limited",
+    503: "service_unavailable",
+}
+
+
+async def http_error_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Los errores HTTP (401, 403, 413, 429, ...) usan el mismo formato ``{error, detail}``."""
+    assert isinstance(exc, StarletteHTTPException)
+    code = _HTTP_CODES.get(exc.status_code, "http_error")
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"error": code, "detail": str(exc.detail)},
+        headers=getattr(exc, "headers", None),
+    )
+
+
+async def validation_error_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Errores de validación sin eco del contenido enviado (no se devuelve ``input``)."""
+    assert isinstance(exc, RequestValidationError)
+    problems = [
+        f"{'.'.join(str(part) for part in err['loc'] if part != 'body')}: {err['msg']}"
+        for err in exc.errors()[:5]
+    ]
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        content={"error": "validation_error", "detail": "; ".join(problems)[:300]},
+    )

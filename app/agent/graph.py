@@ -98,6 +98,7 @@ class ContractAgentGraph:
                 Intent.SHOW_DRAFT.value: "show_draft",
                 Intent.APPROVE_OR_SIGN.value: "refuse",
                 Intent.EDIT_CLAUSES.value: "refuse",
+                Intent.BLOCKED.value: "refuse",
                 Intent.SMALL_TALK.value: "small_talk",
             },
         )
@@ -281,6 +282,8 @@ class ContractAgentGraph:
     def _refuse(state: AgentState) -> Dict[str, Any]:
         if state["intent"] is Intent.APPROVE_OR_SIGN:
             return {"parts": [REFUSAL_APPROVAL]}
+        if state["intent"] is Intent.BLOCKED:
+            return {"parts": [replies.SECURITY_REFUSAL]}
         return {"parts": [REFUSAL_CLAUSES]}
 
     def _small_talk(self, state: AgentState) -> Dict[str, Any]:

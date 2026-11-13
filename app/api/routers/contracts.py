@@ -5,13 +5,17 @@ from __future__ import annotations
 from typing import Annotated, List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, File, Form, HTTPException, Response, UploadFile, status
+from fastapi import APIRouter, File, Form, HTTPException, Query, Response, UploadFile, status
+from fastapi.responses import FileResponse
 
-from app.api import access
-from app.api.deps import LocksDep, RequesterDep, ServicesDep, UserDep
+from app.api import access, events
+from app.api.deps import LocksDep, MessageUserDep, RequesterDep, ServicesDep, UserDep
 from app.api.presenters import contract_out, message_out
 from app.api.schemas import AuditEntryOut, ConflictResolutionIn, ContractOut, MessageOut
+from app.repositories.chat import ChatPage, DocumentRef
 from app.schemas.contract import ContractStatus
+from app.security.text import normalize_input
+from app.services.attachment_store import Upload
 from app.services.document_loader import LoadedDocument
 
 router = APIRouter(prefix="/contracts", tags=["contratos"])
@@ -48,21 +52,28 @@ def get_contract(contract_id: UUID, user: UserDep, services: ServicesDep) -> Con
 @router.post("/{contract_id}/messages", response_model=MessageOut)
 def send_message(
     contract_id: UUID,
-    user: RequesterDep,
+    user: MessageUserDep,
     services: ServicesDep,
     locks: LocksDep,
-    message: Annotated[str, Form(max_length=4000)] = "",
+    message: Annotated[str, Form(max_length=20000)] = "",
     files: Annotated[Optional[List[UploadFile]], File()] = None,
 ) -> MessageOut:
     """Un turno de conversación: texto y/o archivos (PDF, PNG, JPG, WEBP).
 
-    Los archivos se leen en memoria (con tope de tamaño y cantidad) y no se guardan.
+    El mensaje y la respuesta quedan guardados en el historial (``GET .../messages``) y los
+    archivos se conservan para poder verlos de nuevo (``GET .../attachments/{id}``).
     """
     access.load_owned(services, user, contract_id)
-    uploads = files or []
-    if not message.strip() and not uploads:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Enviá un mensaje o un archivo")
     settings = services.settings
+    text = normalize_input(message)
+    uploads = files or []
+    if not text and not uploads:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Enviá un mensaje o un archivo")
+    if len(text) > settings.max_message_chars:
+        raise HTTPException(
+            status.HTTP_413_CONTENT_TOO_LARGE,
+            f"El mensaje supera el máximo de {settings.max_message_chars} caracteres",
+        )
     if len(uploads) > settings.max_upload_files:
         raise HTTPException(
             status.HTTP_413_CONTENT_TOO_LARGE,
@@ -70,20 +81,82 @@ def send_message(
         )
 
     documents: List[LoadedDocument] = []
+    stored_uploads: List[Upload] = []
     for upload in uploads:
         data = upload.file.read(settings.max_upload_bytes + 1)
         if len(data) > settings.max_upload_bytes:
             raise HTTPException(
                 status.HTTP_413_CONTENT_TOO_LARGE,
-                f"'{upload.filename}' supera el máximo de "
+                "Un archivo supera el máximo de "
                 f"{settings.max_upload_bytes // (1024 * 1024)} MB",
             )
-        documents.append(services.loader.load(data, upload.filename or "archivo"))
+        name = upload.filename or "archivo"
+        documents.append(services.loader.load(data, name))
+        stored_uploads.append(Upload(name, data))
 
     with locks.hold(contract_id):
-        reply = services.agent.handle_message(contract_id, message, user.name, documents)
+        reply = services.agent.handle_message(contract_id, text, user.name, documents)
         contract = services.contracts.get(contract_id)
-    return message_out(reply, contract, user)
+        links = (
+            [
+                DocumentRef(
+                    kind="draft",
+                    format="pdf",
+                    url=f"/contracts/{contract_id}/document?version=draft&format=pdf",
+                )
+            ]
+            if reply.artifacts
+            else []
+        )
+        user_message, agent_message = services.chat.record_exchange(
+            contract_id,
+            user.name,
+            text,
+            stored_uploads,
+            reply.text,
+            reply.intent.value,
+            reply.classification_source,
+            reply.sources,
+            links,
+        )
+    return message_out(reply, contract, user, user_message, agent_message)
+
+
+@router.get("/{contract_id}/messages", response_model=ChatPage)
+def get_messages(
+    contract_id: UUID,
+    user: RequesterDep,
+    services: ServicesDep,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    before: Annotated[Optional[int], Query(ge=1, description="Traer los anteriores a este seq")] = None,
+) -> ChatPage:
+    """Historial del chat en orden cronológico, paginado hacia atrás.
+
+    Pedí sin ``before`` para los últimos ``limit`` mensajes; si ``has_more`` es true, volvé a
+    pedir con ``before=next_before`` para los anteriores. Solo lo ve el solicitante dueño.
+    """
+    access.load_owned(services, user, contract_id)
+    return services.chat.history(contract_id, limit, before)
+
+
+@router.get("/{contract_id}/attachments/{attachment_id}", response_class=FileResponse)
+def get_attachment(
+    contract_id: UUID, attachment_id: UUID, user: RequesterDep, services: ServicesDep
+) -> FileResponse:
+    """Archivo que el solicitante adjuntó a un mensaje (se muestra en línea)."""
+    access.load_owned(services, user, contract_id)
+    meta, path = services.chat.attachment_file(contract_id, attachment_id)
+    return FileResponse(
+        path,
+        media_type=meta.media_type,
+        filename=meta.filename,
+        content_disposition_type="inline",
+        headers={
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "sandbox; default-src 'none'",
+        },
+    )
 
 
 @router.post("/{contract_id}/conflicts/resolve", response_model=ContractOut)
@@ -95,10 +168,15 @@ def resolve_conflict(
     locks: LocksDep,
 ) -> ContractOut:
     """Confirma o descarta un dato pendiente (equivale a responder «sí»/«no» en el chat)."""
-    access.load_owned(services, user, contract_id)
+    before = access.load_owned(services, user, contract_id)
     with locks.hold(contract_id):
         contract = services.contracts.resolve_conflict(
             contract_id, body.field_name, body.accept_new, user.name
+        )
+        services.chat.record_event(
+            contract_id,
+            user.name,
+            events.conflict_resolved(before, body.field_name, body.accept_new),
         )
     return contract_out(contract, user)
 
@@ -111,6 +189,7 @@ def submit_for_review(
     access.load_owned(services, user, contract_id)
     with locks.hold(contract_id):
         contract = services.contracts.submit_for_review(contract_id, user.name)
+        services.chat.record_event(contract_id, user.name, events.submitted())
     return contract_out(contract, user)
 
 

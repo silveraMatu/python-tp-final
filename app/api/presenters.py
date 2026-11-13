@@ -15,6 +15,7 @@ from app.api.schemas import (
     MessageOut,
     PendingConflictOut,
 )
+from app.repositories.chat import ChatMessage
 from app.schemas.contract import ContractData, ContractStatus
 
 
@@ -72,7 +73,13 @@ def contract_out(contract: ContractData, user: ApiUser) -> ContractOut:
     )
 
 
-def message_out(reply: AgentReply, contract: ContractData, user: ApiUser) -> MessageOut:
+def message_out(
+    reply: AgentReply,
+    contract: ContractData,
+    user: ApiUser,
+    user_message: ChatMessage,
+    agent_message: ChatMessage,
+) -> MessageOut:
     """Respuesta del agente sin exponer rutas del servidor (solo enlaces de descarga)."""
     documents = (
         [
@@ -92,4 +99,6 @@ def message_out(reply: AgentReply, contract: ContractData, user: ApiUser) -> Mes
         contract=contract_out(contract, user),
         documents=documents,
         sources=reply.sources,
+        user_message=user_message,
+        agent_message=agent_message,
     )

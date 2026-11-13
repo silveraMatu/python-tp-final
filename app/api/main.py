@@ -7,8 +7,9 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Optional
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.api.auth import ApiKeyAuthenticator
 from app.api.deps import ContractLocks
@@ -17,6 +18,7 @@ from app.api.routers import contracts, documents, misc, review
 from app.container import Services, build_services
 from app.core.exceptions import HumanIAError
 from app.core.config import Settings, get_settings
+from app.security.rate_limit import SlidingWindowLimiter
 
 logger = logging.getLogger("humania.api")
 
@@ -65,6 +67,26 @@ def create_app(services: Optional[Services] = None, settings: Optional[Settings]
     app.state.services = services
     app.state.locks = ContractLocks()
     app.state.authenticator = ApiKeyAuthenticator(config.api_users)
+    app.state.message_limiter = SlidingWindowLimiter(config.rate_limit_messages_per_minute)
+    app.state.auth_failure_limiter = SlidingWindowLimiter(config.rate_limit_failed_auth_per_minute)
+    max_request_bytes = config.max_upload_bytes * config.max_upload_files + 1024 * 1024
+
+    @app.middleware("http")
+    async def security_middleware(request: Request, call_next):  # type: ignore[no-untyped-def]
+        declared = request.headers.get("content-length")
+        if declared and declared.isdigit() and int(declared) > max_request_bytes:
+            return JSONResponse(
+                status_code=413,
+                content={"error": "payload_too_large", "detail": "El pedido es demasiado grande"},
+            )
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "no-referrer")
+        response.headers.setdefault("Cache-Control", "no-store")
+        if request.url.path not in ("/docs", "/redoc", "/openapi.json"):
+            response.headers.setdefault("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
+        return response
 
     app.add_middleware(
         CORSMiddleware,

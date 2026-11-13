@@ -21,6 +21,9 @@ from pydantic import ValidationError
 
 from app.core.exceptions import ExtractionError
 from app.schemas.extraction import ExtractedField, FieldCandidate, LLMExtractionPayload
+from app.security.injection import scan
+from app.security.output_guard import canary_line, protect
+from app.security.text import neutralize_delimiters, normalize_input
 from app.services.document_loader import LoadedDocument
 from app.services.llm_client import LLMClient
 from app.services.normalization import (
@@ -40,6 +43,7 @@ _FREE_TEXT_FIELDS: Final[frozenset[str]] = frozenset(
     }
 )  # fmt: skip
 _MAX_MESSAGE_CHARS: Final[int] = 8_000
+_MAX_OUTPUT_TOKENS: Final[int] = 1_024
 _AMOUNT_TOKEN_RE: Final[re.Pattern[str]] = re.compile(r"\d[\d.,]*\d|\d")
 _DATE_TOKEN_RES: Final[tuple[re.Pattern[str], ...]] = (
     re.compile(r"\d{4}-\d{1,2}-\d{1,2}"),
@@ -127,7 +131,9 @@ class ExtractionService:
         self._llm = llm
         self._max_retries = max_retries
         self._cap = ungrounded_confidence_cap
-        self._system = _SYSTEM_PROMPT.format(catalog=_build_catalog())
+        self._system = (
+            protect(_SYSTEM_PROMPT.format(catalog=_build_catalog())) + "\n" + canary_line()
+        )
         self._schema: Dict[str, Any] = LLMExtractionPayload.model_json_schema()
 
     # ------------------------------------------------------------------ #
@@ -139,7 +145,7 @@ class ExtractionService:
         text = message.strip()
         if not text:
             return ExtractionResult()
-        content = text[:_MAX_MESSAGE_CHARS]
+        content = neutralize_delimiters(normalize_input(text))[:_MAX_MESSAGE_CHARS]
         user = f"Mensaje del responsable de RR. HH.:\n<<<\n{content}\n>>>"
         payload = self._call(user, images=())
         return self._build_result(payload, source_text=content, source=source)
@@ -149,7 +155,8 @@ class ExtractionService:
         source = f"doc:{document.filename}"
         parts = [f"Documento: {document.filename}"]
         if document.text:
-            parts.append(f"Texto del documento:\n<<<\n{document.text}\n>>>")
+            safe_text = neutralize_delimiters(normalize_input(document.text))
+            parts.append(f"Texto del documento:\n<<<\n{safe_text}\n>>>")
         if document.images:
             parts.append("Las imágenes adjuntas son parte del documento; léelas con cuidado.")
         payload = self._call("\n\n".join(parts), images=document.images)
@@ -166,7 +173,11 @@ class ExtractionService:
         last_error = "respuesta inválida"
         for _ in range(self._max_retries + 1):
             raw = self._llm.generate_json(
-                system=self._system, user=prompt, schema=self._schema, images=images
+                system=self._system,
+                user=prompt,
+                schema=self._schema,
+                images=images,
+                max_tokens=_MAX_OUTPUT_TOKENS,
             )
             try:
                 return LLMExtractionPayload.model_validate_json(raw)
@@ -197,6 +208,11 @@ class ExtractionService:
                 warnings.append(f"Campo descartado por no pertenecer al esquema: {path}")
                 continue
             if item.value is None or not item.value.strip():
+                continue
+            # Defensa contra inyección indirecta: ni el valor ni la evidencia pueden traer
+            # instrucciones, marcado ni código (un documento hostil podría "dictarlas").
+            if scan(f"{item.value}\n{item.evidence or ''}").blocked:
+                warnings.append(f"{path}: contenido sospechoso descartado")
                 continue
 
             value = normalize_value(path, item.value)

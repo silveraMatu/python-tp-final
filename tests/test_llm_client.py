@@ -37,7 +37,7 @@ def test_text_call_uses_text_model_and_schema() -> None:
     assert out == '{"fields": []}'
     assert fake.kwargs["model"] == "txt"
     assert fake.kwargs["format"] == SCHEMA
-    assert fake.kwargs["options"] == {"temperature": 0}
+    assert fake.kwargs["options"] == {"temperature": 0, "num_predict": 1024}
     assert fake.kwargs["think"] is False
     assert fake.kwargs["messages"] == [
         {"role": "system", "content": "s"},

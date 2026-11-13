@@ -8,7 +8,11 @@ from typing import Optional
 from app.agent.intents import IntentClassifier
 from app.agent.service import AgentService
 from app.core.config import Settings
+from app.security.output_guard import OutputGuard
 from app.repositories.sqlite import SqliteContractRepository
+from app.repositories.sqlite_chat import SqliteChatRepository
+from app.services.attachment_store import AttachmentStore
+from app.services.chat_service import ChatService
 from app.services.contract_service import ContractService
 from app.services.document_loader import DocumentLoader
 from app.services.export_service import ExportService, build_export_service
@@ -30,6 +34,7 @@ class Services:
     agent: AgentService
     loader: DocumentLoader
     rag: Optional[RagService]
+    chat: ChatService
 
 
 def build_services(settings: Settings, with_rag: bool = True) -> Services:
@@ -50,10 +55,15 @@ def build_services(settings: Settings, with_rag: bool = True) -> Services:
         classifier=IntentClassifier(llm),
         rag=rag,
         exporter=exporter,
+        output_guard=OutputGuard(settings.max_reply_chars),
+        max_message_chars=settings.max_message_chars,
     )
     loader = DocumentLoader(
         max_bytes=settings.max_upload_bytes,
         max_pages=settings.max_document_pages,
         max_image_side=settings.max_image_side,
     )
-    return Services(settings, contracts, templates, exporter, agent, loader, rag)
+    chat = ChatService(
+        SqliteChatRepository(settings.database_path), AttachmentStore(settings.attachments_dir)
+    )
+    return Services(settings, contracts, templates, exporter, agent, loader, rag, chat)
