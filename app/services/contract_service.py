@@ -21,7 +21,7 @@ from app.schemas.contract import (
     ValidationSeverity,
 )
 from app.schemas.extraction import FieldCandidate
-from app.services.template_service import ContractTemplateService
+from app.services.template_service import ContractTemplateService, RenderOptions
 from app.services.validation_service import (
     SECTION_MODELS,
     Outcome,
@@ -232,11 +232,19 @@ class ContractService:
                 ContractStatus.APPROVED.value,
                 "el documento final requiere un contrato aprobado",
             )
-        path = self._templates.render_contract(contract, self._template_path, output_path)
+        path = self._templates.render_contract(
+            contract, self._template_path, output_path, RenderOptions(draft=not require_approved)
+        )
         self._repo.save(
             contract, actor, "rendered_final" if require_approved else "rendered_draft"
         )
         return path
+
+    def record_event(
+        self, contract_id: UUID, actor: str, action: str, detail: Optional[str] = None
+    ) -> None:
+        """Agrega una entrada de auditoría sin modificar el contrato."""
+        self._repo.save(self._repo.get(contract_id), actor, action, detail)
 
     # ------------------------------------------------------------------ #
     # Helpers internos

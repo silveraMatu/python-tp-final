@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import List, Optional, Sequence
 from uuid import UUID
 
@@ -16,6 +15,7 @@ from app.repositories.sqlite import SqliteContractRepository
 from app.schemas.contract import ContractData, ContractStatus
 from app.services.contract_service import ContractService
 from app.services.document_loader import LoadedDocument
+from app.services.export_service import ExportService, build_export_service
 from app.services.extraction_service import ExtractionService
 from app.services.llm_client import build_llm_client
 from app.services.rag_service import RagService, build_rag_service
@@ -60,10 +60,10 @@ class AgentService:
         extraction: ExtractionService,
         classifier: IntentClassifier,
         rag: Optional[RagService],
-        output_dir: Path,
+        exporter: ExportService,
     ) -> None:
         self._contracts = contracts
-        self._graph = ContractAgentGraph(contracts, extraction, classifier, rag, output_dir).compile()
+        self._graph = ContractAgentGraph(contracts, extraction, classifier, rag, exporter).compile()
 
     def start(self, actor: str) -> ContractData:
         """Crea un contrato nuevo (estado ``INITIAL``)."""
@@ -118,10 +118,11 @@ class AgentService:
 def build_agent_service(settings: Settings, with_rag: bool = True) -> AgentService:
     """Cablea repositorio, servicios y LLM según la configuración."""
     llm = build_llm_client(settings)
+    templates = ContractTemplateService(city=settings.city)
     contracts = ContractService(
         SqliteContractRepository(settings.database_path),
         ValidationService(settings.confidence_threshold),
-        ContractTemplateService(city=settings.city),
+        templates,
         settings.template_path,
     )
     return AgentService(
@@ -129,5 +130,5 @@ def build_agent_service(settings: Settings, with_rag: bool = True) -> AgentServi
         extraction=ExtractionService(llm, max_retries=settings.extraction_max_retries),
         classifier=IntentClassifier(llm),
         rag=build_rag_service(settings) if with_rag else None,
-        output_dir=settings.output_dir,
+        exporter=build_export_service(settings, contracts, templates),
     )

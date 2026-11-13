@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -15,8 +16,12 @@ from app.core.exceptions import (
 )
 from app.schemas.contract import ContractData, EmploymentType, FieldValidation
 from app.services.template_service import (
+    BLANK_REVIEW,
+    DRAFT_HEADER,
     STATIC_CLAUSES,
     ContractTemplateService,
+    RenderOptions,
+    ReviewRecord,
     amount_in_words,
     format_ars,
     format_dni,
@@ -174,3 +179,62 @@ def test_template_with_unknown_variable_fails_and_cleans_up(
     with pytest.raises(ContractRenderError):
         service.render_contract(contract, str(broken), str(output))
     assert not output.exists()
+
+
+def _header_footer(path: str) -> tuple[str, str]:
+    section = Document(path).sections[0]
+    return (
+        " ".join(p.text for p in section.header.paragraphs).strip(),
+        " ".join(p.text for p in section.footer.paragraphs).strip(),
+    )
+
+
+def test_default_render_has_blank_review_and_no_draft_header(
+    service: ContractTemplateService, template_path: str, contract: ContractData, tmp_path: Path
+) -> None:
+    result = service.render_contract(contract, template_path, str(tmp_path / "c.docx"))
+    text = _all_text(result)
+    for value in BLANK_REVIEW.values():
+        assert value in text
+    header, footer = _header_footer(result)
+    assert header == "" and "ficticio" not in footer.lower()
+    code = service.build_context(contract)["codigo_verificacion"]
+    assert footer.startswith(f"Código de verificación: {code}")
+
+
+def test_draft_option_adds_the_header_only(
+    service: ContractTemplateService, template_path: str, contract: ContractData, tmp_path: Path
+) -> None:
+    draft = service.render_contract(
+        contract, template_path, str(tmp_path / "d.docx"), RenderOptions(draft=True)
+    )
+    assert _header_footer(draft)[0] == DRAFT_HEADER
+    for clause in service.rendered_clauses(service.build_context(contract)):
+        assert clause[1] in _all_text(draft)
+
+
+def test_review_record_fills_the_control_table(
+    service: ContractTemplateService, template_path: str, contract: ContractData, tmp_path: Path
+) -> None:
+    options = RenderOptions(review=ReviewRecord("gerente", date(2026, 11, 12)))
+    result = service.render_contract(contract, template_path, str(tmp_path / "f.docx"), options)
+    text = _all_text(result)
+    assert "☒ Sí" in text and "☒ Aprobado" in text
+    assert "Nombre: gerente Fecha: 12/11/2026" in text
+    assert "Ninguna / Detalle" not in text
+
+
+def test_verification_code_is_stable_and_content_sensitive(
+    service: ContractTemplateService, contract: ContractData
+) -> None:
+    code = service.build_context(contract)["codigo_verificacion"]
+    assert re.fullmatch(r"[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}", code)
+    assert service.build_context(contract)["codigo_verificacion"] == code
+    assert service.build_context(contract, RenderOptions(draft=True))["codigo_verificacion"] == code
+
+    assert contract.terms is not None
+    other = contract.model_copy(deep=True)
+    other.terms = contract.terms.model_copy(update={"puesto_funcion": "Analista"})
+    assert service.build_context(other)["codigo_verificacion"] != code
+    later = ContractTemplateService(today=lambda: date(2026, 12, 1))
+    assert later.build_context(contract)["codigo_verificacion"] != code

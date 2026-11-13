@@ -10,7 +10,6 @@ acceso a ``review``/``mark_as_reviewed``: no puede aprobar ni rechazar.
 from __future__ import annotations
 
 import operator
-from pathlib import Path
 from typing import Annotated, Any, Dict, List, Optional, Sequence, TypedDict
 from uuid import UUID
 
@@ -30,6 +29,7 @@ from app.schemas.contract import ContractStatus, EmploymentType
 from app.schemas.extraction import FieldCandidate
 from app.services.contract_service import ContractService
 from app.services.document_loader import LoadedDocument
+from app.services.export_service import ExportService
 from app.services.extraction_service import ExtractionService
 from app.services.rag_service import RagService
 from app.services.template_catalog import get_template_info
@@ -64,13 +64,13 @@ class ContractAgentGraph:
         extraction: ExtractionService,
         classifier: IntentClassifier,
         rag: Optional[RagService],
-        output_dir: Path,
+        exporter: ExportService,
     ) -> None:
         self._contracts = contracts
         self._extraction = extraction
         self._classifier = classifier
         self._rag = rag
-        self._output_dir = output_dir
+        self._exporter = exporter
 
     def compile(self) -> Any:
         graph = StateGraph(AgentState)
@@ -259,22 +259,22 @@ class ContractAgentGraph:
         return {"parts": [replies.summary(self._contracts.get(state["contract_id"]))]}
 
     def _show_draft(self, state: AgentState) -> Dict[str, Any]:
-        contract_id = state["contract_id"]
-        target = self._output_dir / f"{contract_id}_borrador.docx"
         try:
-            path = self._contracts.render(contract_id, str(target), state["actor"])
+            document = self._exporter.export_draft(state["contract_id"], state["actor"])
         except IncompleteContractDataError:
             return {"parts": ["Todavía no puedo generar el borrador: faltan datos o hay errores."]}
         except UnsupportedModalityError as exc:
             return {"parts": [f"No puedo generar el borrador: {exc.message}."]}
+        except InvalidStateTransitionError:
+            return {"parts": ["Este contrato ya tuvo una decisión: no admite un nuevo borrador."]}
         except ContractRenderError as exc:
             return {"parts": [f"No pude generar el documento: {exc.message}"]}
         return {
             "parts": [
-                "Generé la versión preliminar. Es solo un borrador para revisar: no está aprobada "
-                "ni formalizada."
+                "Generé la versión preliminar en PDF, con marca de BORRADOR. Es solo para "
+                "revisar: no está aprobada ni formalizada."
             ],
-            "artifacts": [path],
+            "artifacts": [str(document.pdf_path)],
         }
 
     @staticmethod

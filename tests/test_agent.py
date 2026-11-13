@@ -19,10 +19,12 @@ from app.schemas.contract import ContractStatus
 from app.schemas.extraction import FieldCandidate
 from app.services.contract_service import ContractService
 from app.services.document_loader import LoadedDocument
+from app.services.export_service import ExportService
 from app.services.extraction_service import ExtractionService
 from app.services.rag_service import RagAnswer, SearchHit
 from app.services.template_service import ContractTemplateService
 from app.services.validation_service import FIELD_PATHS, ValidationService
+from tests.helpers import FakePdfConverter
 from tests.test_contract_service import FULL_VALUES, batch
 
 ACTOR = "rrhh"
@@ -123,7 +125,9 @@ def env(tmp_path: Path) -> Env:
         ExtractionService(llm, max_retries=0),
         IntentClassifier(llm, max_retries=1),
         rag,  # type: ignore[arg-type]
-        tmp_path / "out",
+        ExportService(
+            contracts, templates, FakePdfConverter(), template_path, tmp_path / "out"
+        ),
     )
     return Env(agent, contracts, llm, rag, agent.start(ACTOR).id, tmp_path)
 
@@ -373,8 +377,9 @@ def test_show_draft_generates_a_preliminary_document(env: Env) -> None:
 
     env.load_everything()
     reply = env.say("quiero ver el borrador")
-    assert "no está aprobada" in reply.text
+    assert "marca de BORRADOR" in reply.text and "no está aprobada" in reply.text
     assert len(reply.artifacts) == 1 and Path(reply.artifacts[0]).is_file()
+    assert reply.artifacts[0].endswith("borrador.pdf")
     assert reply.status is ContractStatus.COLLECTING_DATA
 
 
@@ -472,3 +477,12 @@ def test_display_value_formats_es_ar() -> None:
     assert replies.display_value("company.cuit", "30-71234567-1") == "30-71234567-1"
     assert replies.display_value("terms.modalidad", "INDETERMINATE").endswith("tiempo indeterminado")
     assert replies.display_value("terms.modalidad", "inventada") == "inventada"
+
+
+def test_draft_after_a_decision_is_not_available(env: Env) -> None:
+    env.load_everything()
+    env.contracts.submit_for_review(env.contract_id, ACTOR)
+    env.contracts.review(env.contract_id, False, "gerente")
+    env.llm.push("intent", intent_json("SHOW_DRAFT"))
+    reply = env.say("quiero ver el borrador")
+    assert "ya tuvo una decisión" in reply.text and reply.artifacts == []

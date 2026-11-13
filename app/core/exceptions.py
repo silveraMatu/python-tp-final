@@ -102,3 +102,11 @@ class LLMUnavailableError(HumanIAError):
 
 class ExtractionError(HumanIAError):
     """El modelo no devolvió una extracción válida tras los reintentos."""
+
+
+class PdfConversionError(ContractRenderError):
+    """Falló la conversión de DOCX a PDF (LibreOffice ausente, timeout o error)."""
+
+
+class ExportIntegrityError(HumanIAError):
+    """Un documento final no coincide con lo registrado (alterado, faltante o sin registro)."""

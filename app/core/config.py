@@ -50,6 +50,14 @@ class Settings(BaseSettings):
     max_image_side: int = Field(
         default=1280, ge=256, description="Lado mayor (px) al que se reduce cada imagen."
     )
+    soffice_path: str = Field(
+        default="soffice", description="Ejecutable de LibreOffice para convertir DOCX a PDF."
+    )
+    pdf_timeout: float = Field(default=90.0, gt=0, description="Timeout (s) de cada conversión.")
+    timezone: str = Field(
+        default="America/Argentina/Cordoba",
+        description="Zona horaria para las fechas que se imprimen en el documento.",
+    )
     embedding_model: str = Field(
         default="nomic-embed-text", description="Modelo de embeddings (local, vía Ollama)."
     )

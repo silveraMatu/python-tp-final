@@ -10,13 +10,14 @@ que el texto de cada cláusula coincida con el autorizado.
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, Final, Optional
 
 from docx import Document
 from docx.document import Document as DocxDocument
@@ -24,7 +25,7 @@ from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
-from docx.shared import Pt
+from docx.shared import Pt, RGBColor
 from docx.table import Table, _Cell
 from docx.text.paragraph import Paragraph
 from docxtpl import DocxTemplate
@@ -133,10 +134,8 @@ CLOSING_TEXT: Final[str] = (
     "En prueba de conformidad, se firman dos ejemplares de un mismo tenor y a un solo efecto, "
     "en el lugar y fecha indicados al comienzo."
 )
-FOOTER_TEXT: Final[str] = (
-    "Documento ficticio de prueba – Su generación no implica aprobación legal ni "
-    "formalización. Página "
-)
+FOOTER_TEXT: Final[str] = "Código de verificación: {{ codigo_verificacion }}    Página "
+DRAFT_HEADER: Final[str] = "BORRADOR – pendiente de aprobación humana"
 
 CONTRACT_DATA_ROWS: Final[tuple[tuple[str, str], ...]] = (
     ("Empleador", "{{ company.razon_social }}"),
@@ -157,11 +156,18 @@ CONTRACT_DATA_ROWS: Final[tuple[tuple[str, str], ...]] = (
     ("Lugar de prestación de servicios", "{{ terms.lugar_trabajo }}"),
 )
 REVIEW_CONTROL_ROWS: Final[tuple[tuple[str, str], ...]] = (
-    ("Datos validados por RR. HH.", "☐ Sí      ☐ No"),
-    ("Inconsistencias detectadas", "Ninguna / Detalle: ____________________"),
-    ("Responsable que revisó", "Nombre: ______________ Fecha: ___/___/_____"),
-    ("Aprobación final", "☐ Aprobado         ☐ Requiere cambios"),
+    ("Datos validados por RR. HH.", "{{ revision.validado }}"),
+    ("Inconsistencias detectadas", "{{ revision.inconsistencias }}"),
+    ("Responsable que revisó", "{{ revision.responsable }}"),
+    ("Aprobación final", "{{ revision.aprobacion }}"),
 )
+# Control de revisión sin completar (borrador y documentos sin aprobación registrada).
+BLANK_REVIEW: Final[dict[str, str]] = {
+    "validado": "☐ Sí      ☐ No",
+    "inconsistencias": "Ninguna / Detalle: ____________________",
+    "responsable": "Nombre: ______________ Fecha: ___/___/_____",
+    "aprobacion": "☐ Aprobado         ☐ Requiere cambios",
+}
 
 SUPPORTED_MODALITIES: Final[frozenset[EmploymentType]] = frozenset({EmploymentType.INDETERMINATE})
 
@@ -205,6 +211,44 @@ def amount_in_words(amount: Decimal) -> str:
     words = re.sub(r"\bveintiuno\b(?= (?:mil|millones))", "veintiún", words)
     words = re.sub(r"\buno\b(?= (?:mil|millones))", "un", words)
     return f"{words} con {cents:02d}/100" if cents else words
+
+
+# --------------------------------------------------------------------------- #
+# Opciones de render
+# --------------------------------------------------------------------------- #
+
+
+@dataclass(frozen=True)
+class ReviewRecord:
+    """Decisión humana registrada, para completar el control de revisión del final."""
+
+    reviewer: str
+    reviewed_on: date
+
+
+@dataclass(frozen=True)
+class RenderOptions:
+    """Variantes de render que no tocan las cláusulas.
+
+    Attributes:
+        draft: agrega el encabezado de borrador.
+        review: si se informa, completa el control de revisión humana.
+    """
+
+    draft: bool = False
+    review: Optional[ReviewRecord] = None
+
+
+def review_context(review: Optional[ReviewRecord]) -> dict[str, str]:
+    """Textos del control de revisión (en blanco si no hay decisión registrada)."""
+    if review is None:
+        return dict(BLANK_REVIEW)
+    return {
+        "validado": "☒ Sí      ☐ No",
+        "inconsistencias": "Ninguna",
+        "responsable": f"Nombre: {review.reviewer} Fecha: {format_date(review.reviewed_on)}",
+        "aprobacion": "☒ Aprobado         ☐ Requiere cambios",
+    }
 
 
 # --------------------------------------------------------------------------- #
@@ -275,6 +319,7 @@ class ContractTemplateService:
             )
             self._add_key_value_table(document, REVIEW_CONTROL_ROWS)
 
+            self._add_header(document)
             self._add_footer(document)
 
             target = Path(output_path)
@@ -322,8 +367,12 @@ class ContractTemplateService:
         contract_data: ContractData,
         template_path: str,
         output_path: str,
+        options: RenderOptions = RenderOptions(),
     ) -> str:
         """Inyecta los datos validados en la plantilla y guarda el ``.docx``.
+
+        ``options`` solo cambia el encabezado de borrador y el control de revisión;
+        las cláusulas legales son siempre las autorizadas.
 
         Returns:
             Ruta absoluta del documento generado.
@@ -355,7 +404,7 @@ class ContractTemplateService:
 
         output = Path(output_path).resolve()
         try:
-            context = self.build_context(contract_data)
+            context = self.build_context(contract_data, options)
             template = DocxTemplate(template_path)
             template.render(
                 context,
@@ -374,7 +423,9 @@ class ContractTemplateService:
 
         return str(output)
 
-    def build_context(self, contract_data: ContractData) -> dict[str, Any]:
+    def build_context(
+        self, contract_data: ContractData, options: RenderOptions = RenderOptions()
+    ) -> dict[str, Any]:
         """Construye el contexto de render (todo texto ya formateado, es-AR).
 
         Raises:
@@ -389,7 +440,7 @@ class ContractTemplateService:
             raise IncompleteContractDataError(missing_fields=contract_data.get_missing_fields())
 
         today = self._today()
-        return {
+        context: dict[str, Any] = {
             "lugar_celebracion": self._city,
             "dia_celebracion": str(today.day),
             "mes_celebracion": _MONTHS_ES[today.month - 1],
@@ -420,6 +471,37 @@ class ContractTemplateService:
                 "lugar_trabajo": terms.lugar_trabajo,
             },
         }
+        context["estado_documento"] = DRAFT_HEADER if options.draft else ""
+        context["revision"] = review_context(options.review)
+        context["codigo_verificacion"] = self.verification_code(context)
+        return context
+
+    @staticmethod
+    def rendered_clauses(context: dict[str, Any]) -> list[tuple[str, str]]:
+        """Cláusulas autorizadas con las variables del contexto ya reemplazadas."""
+        env = Environment(undefined=StrictUndefined)
+        return [(c.heading, env.from_string(c.body).render(context)) for c in STATIC_CLAUSES]
+
+    def verification_code(self, context: dict[str, Any]) -> str:
+        """Código corto (``XXXX-XXXX-XXXX``) derivado del contenido: cláusulas + datos.
+
+        Dos documentos con las mismas cláusulas y datos tienen el mismo código; si
+        cambia cualquiera de los dos, cambia el código.
+        """
+        data_keys = (
+            "lugar_celebracion", "dia_celebracion", "mes_celebracion", "anio_celebracion",
+            "employee", "company", "terms",
+        )  # fmt: skip
+        payload = json.dumps(
+            {
+                "clauses": self.rendered_clauses(context),
+                "data": {key: context[key] for key in data_keys},
+            },
+            sort_keys=True,
+            ensure_ascii=False,
+        )
+        digest = hashlib.sha256(payload.encode("utf-8")).hexdigest().upper()
+        return f"{digest[0:4]}-{digest[4:8]}-{digest[8:12]}"
 
     # ------------------------------------------------------------------ #
     # Verificación posterior al render
@@ -428,8 +510,7 @@ class ContractTemplateService:
     def _verify_rendered(self, output: Path, context: dict[str, Any]) -> None:
         """El documento final debe tener las cláusulas autorizadas y ningún tag sin resolver."""
         document = Document(str(output))
-        env = Environment(undefined=StrictUndefined)
-        expected = [(c.heading, env.from_string(c.body).render(context)) for c in STATIC_CLAUSES]
+        expected = self.rendered_clauses(context)
 
         violations = self._clause_violations([p.text for p in document.paragraphs], expected)
         if violations:
@@ -472,6 +553,7 @@ class ContractTemplateService:
             for row in table.rows:
                 texts.extend(cell.text for cell in row.cells)
         for section in document.sections:
+            texts.extend(p.text for p in section.header.paragraphs)
             texts.extend(p.text for p in section.footer.paragraphs)
         return texts
 
@@ -548,6 +630,16 @@ class ContractTemplateService:
             second.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
     @staticmethod
+    def _add_header(document: DocxDocument) -> None:
+        """Encabezado con el estado del documento (vacío en el final)."""
+        header = document.sections[0].header.paragraphs[0]
+        header.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run = header.add_run("{{ estado_documento }}")  # un solo run
+        run.bold = True
+        run.font.size = Pt(10)
+        run.font.color.rgb = RGBColor(0xC0, 0x00, 0x00)
+
+    @staticmethod
     def _add_footer(document: DocxDocument) -> None:
         footer = document.sections[0].footer.paragraphs[0]
         footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -557,6 +649,11 @@ class ContractTemplateService:
         field = OxmlElement("w:fldSimple")
         field.set(qn("w:instr"), "PAGE")
         field_run = OxmlElement("w:r")
+        field_props = OxmlElement("w:rPr")
+        field_size = OxmlElement("w:sz")
+        field_size.set(qn("w:val"), "16")  # 8 pt, igual que el resto del pie
+        field_props.append(field_size)
+        field_run.append(field_props)
         field_text = OxmlElement("w:t")
         field_text.text = "1"
         field_run.append(field_text)
