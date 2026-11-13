@@ -281,6 +281,9 @@ class ContractData(BaseModel):
     model_config = ConfigDict(extra="forbid", validate_assignment=True)
 
     id: UUID = Field(default_factory=uuid4, description="Identificador único del contrato.")
+    created_by: Optional[str] = Field(
+        default=None, description="Usuario que creó el contrato (dueño del borrador).", examples=["ana"]
+    )
     employee: Optional[EmployeeData] = Field(default=None, description="Datos del trabajador.")
     company: Optional[CompanyData] = Field(default=None, description="Datos de la empresa.")
     terms: Optional[LaborTerms] = Field(default=None, description="Condiciones laborales.")

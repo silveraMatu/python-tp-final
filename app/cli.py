@@ -3,6 +3,7 @@
 - ``index``: reindexa cláusulas y documentos de la carpeta de conocimiento.
 - ``ask "pregunta"``: consulta la base de conocimiento.
 - ``seed ARCHIVO...``: copia archivos a la carpeta de conocimiento.
+- ``apikey NOMBRE ROL``: genera una API key y la entrada para ``HUMANIA_API_USERS``.
 - ``chat``: conversa con el agente en la terminal (``/adjuntar RUTA`` sube un archivo,
   ``/salir`` termina).
 """
@@ -10,10 +11,13 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 from typing import List, Optional, Sequence
 
-from app.agent.service import AgentService, build_agent_service
+from app.agent.service import AgentService
+from app.api.auth import generate_api_key
+from app.container import build_services
 from app.core.config import get_settings
 from app.core.exceptions import HumanIAError, UnsupportedDocumentError
 from app.services.document_loader import DocumentLoader, LoadedDocument
@@ -30,7 +34,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     seed = commands.add_parser("seed", help="Copia archivos a la carpeta de conocimiento")
     seed.add_argument("files", nargs="+", type=Path)
     commands.add_parser("chat", help="Conversa con el agente")
+    apikey = commands.add_parser("apikey", help="Genera una API key y su entrada de configuración")
+    apikey.add_argument("name")
+    apikey.add_argument("role", choices=["REQUESTER", "REVIEWER"])
     args = parser.parse_args(argv)
+
+    if args.command == "apikey":
+        key, digest = generate_api_key()
+        entry = {"name": args.name, "role": args.role, "key_sha256": digest}
+        print(f"API key (se muestra una sola vez): {key}")
+        print(f"Entrada para HUMANIA_API_USERS: {json.dumps(entry)}")
+        return 0
 
     settings = get_settings()
 
@@ -40,7 +54,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return 0
 
     if args.command == "chat":
-        return _chat(build_agent_service(settings))
+        return _chat(build_services(settings).agent)
 
     service = build_rag_service(settings)
     if args.command == "index":

@@ -5,12 +5,14 @@ from __future__ import annotations
 import math
 import re
 from pathlib import Path
-from typing import Callable, Optional
+import json
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
 
 import pymupdf
 from docx import Document
 
 from app.core.exceptions import PdfConversionError
+from app.services.rag_service import RagAnswer, SearchHit
 
 _CODE_RE = re.compile(r"[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}")
 # La fuente base de PyMuPDF solo dibuja Latin-1; esta, embebida, soporta "–" y las comillas “ ”.
@@ -79,3 +81,63 @@ class FakePdfConverter:
             page.insert_text((72, 45), header, fontsize=9, fontname=_FONT)
         page.insert_text((72, 800), footer, fontsize=8, fontname=_FONT)
         return page
+
+
+class ScriptedLLM:
+    """LLM falso: responde según el tipo de llamada (por el prompt de sistema)."""
+
+    KINDS = {
+        "clasificador de intención": "intent",
+        "extractor de datos": "extraction",
+        "Respondes consultas": "rag",
+    }
+
+    def __init__(self) -> None:
+        self.queues: Dict[str, List[str]] = {"intent": [], "extraction": [], "rag": []}
+        self.calls: List[str] = []
+
+    def push(self, kind: str, *responses: str) -> None:
+        self.queues[kind].extend(responses)
+
+    def generate_json(
+        self,
+        *,
+        system: str,
+        user: str,
+        schema: Mapping[str, Any],
+        images: Sequence[bytes] = (),
+    ) -> str:
+        kind = next(name for text, name in self.KINDS.items() if text in system)
+        self.calls.append(kind)
+        assert self.queues[kind], f"llamada inesperada al LLM ({kind})"
+        return self.queues[kind].pop(0)
+
+    def count(self, kind: str) -> int:
+        return self.calls.count(kind)
+
+
+def intent_json(intent: str, decision: str | None = None) -> str:
+    return json.dumps({"intent": intent, "decision": decision})
+
+
+def extraction_json(*fields: tuple[str, str, str, float]) -> str:
+    return json.dumps(
+        {
+            "fields": [
+                {"field_name": p, "value": v, "evidence": e, "confidence": c}
+                for p, v, e, c in fields
+            ]
+        }
+    )
+
+
+class FakeRag:
+    def __init__(self) -> None:
+        self.questions: List[str] = []
+
+    def answer(self, question: str) -> RagAnswer:
+        self.questions.append(question)
+        hit = SearchHit("id", "texto", "clausula:SEXTA", "clause", 0.9)
+        return RagAnswer("La cláusula SEXTA exige confidencialidad.", True, [hit])
+
+

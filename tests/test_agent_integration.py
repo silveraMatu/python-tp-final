@@ -11,7 +11,8 @@ from pathlib import Path
 import pytest
 
 from app.agent.intents import Intent
-from app.agent.service import AgentService, build_agent_service
+from app.agent.service import AgentService
+from app.container import build_services
 from app.core.config import Settings
 from app.core.exceptions import LLMUnavailableError
 from app.schemas.contract import ContractStatus
@@ -36,7 +37,7 @@ def agent(tmp_path: Path) -> AgentService:
         chroma_path=tmp_path / "chroma",
         _env_file=None,
     )
-    return build_agent_service(settings, with_rag=False)
+    return build_services(settings, with_rag=False).agent
 
 
 def test_full_conversation(agent: AgentService) -> None:

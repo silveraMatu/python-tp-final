@@ -24,68 +24,16 @@ from app.services.extraction_service import ExtractionService
 from app.services.rag_service import RagAnswer, SearchHit
 from app.services.template_service import ContractTemplateService
 from app.services.validation_service import FIELD_PATHS, ValidationService
-from tests.helpers import FakePdfConverter
+from tests.helpers import (
+    FakePdfConverter,
+    FakeRag,
+    ScriptedLLM,
+    extraction_json,
+    intent_json,
+)
 from tests.test_contract_service import FULL_VALUES, batch
 
 ACTOR = "rrhh"
-
-
-class ScriptedLLM:
-    """LLM falso: responde según el tipo de llamada (por el prompt de sistema)."""
-
-    KINDS = {
-        "clasificador de intención": "intent",
-        "extractor de datos": "extraction",
-        "Respondes consultas": "rag",
-    }
-
-    def __init__(self) -> None:
-        self.queues: Dict[str, List[str]] = {"intent": [], "extraction": [], "rag": []}
-        self.calls: List[str] = []
-
-    def push(self, kind: str, *responses: str) -> None:
-        self.queues[kind].extend(responses)
-
-    def generate_json(
-        self,
-        *,
-        system: str,
-        user: str,
-        schema: Mapping[str, Any],
-        images: Sequence[bytes] = (),
-    ) -> str:
-        kind = next(name for text, name in self.KINDS.items() if text in system)
-        self.calls.append(kind)
-        assert self.queues[kind], f"llamada inesperada al LLM ({kind})"
-        return self.queues[kind].pop(0)
-
-    def count(self, kind: str) -> int:
-        return self.calls.count(kind)
-
-
-def intent_json(intent: str, decision: str | None = None) -> str:
-    return json.dumps({"intent": intent, "decision": decision})
-
-
-def extraction_json(*fields: tuple[str, str, str, float]) -> str:
-    return json.dumps(
-        {
-            "fields": [
-                {"field_name": p, "value": v, "evidence": e, "confidence": c}
-                for p, v, e, c in fields
-            ]
-        }
-    )
-
-
-class FakeRag:
-    def __init__(self) -> None:
-        self.questions: List[str] = []
-
-    def answer(self, question: str) -> RagAnswer:
-        self.questions.append(question)
-        hit = SearchHit("id", "texto", "clausula:SEXTA", "clause", 0.9)
-        return RagAnswer("La cláusula SEXTA exige confidencialidad.", True, [hit])
 
 
 @dataclass

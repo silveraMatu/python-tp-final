@@ -82,7 +82,7 @@ class ContractService:
 
     def start(self, actor: str) -> ContractData:
         """Crea un borrador vacío en estado ``INITIAL``."""
-        contract = ContractData()
+        contract = ContractData(created_by=actor)
         contract.get_missing_fields()
         self._repo.create(contract, actor)
         return contract
@@ -183,8 +183,10 @@ class ContractService:
         self._repo.save(contract, actor, "submitted_for_review")
         return contract
 
-    def review(self, contract_id: UUID, approved: bool, actor: str) -> ContractData:
-        """Registra la decisión del revisor humano.
+    def review(
+        self, contract_id: UUID, approved: bool, actor: str, comment: Optional[str] = None
+    ) -> ContractData:
+        """Registra la decisión del revisor humano (con un comentario opcional en la auditoría).
 
         Raises:
             InvalidStateTransitionError: no está pendiente de revisión o no cumple
@@ -198,14 +200,16 @@ class ContractService:
             raise InvalidStateTransitionError(
                 contract.status.value, target.value, str(exc)
             ) from exc
-        self._repo.save(contract, actor, "approved" if approved else "rejected")
+        self._repo.save(contract, actor, "approved" if approved else "rejected", comment)
         return contract
 
-    def request_changes(self, contract_id: UUID, actor: str) -> ContractData:
+    def request_changes(
+        self, contract_id: UUID, actor: str, comment: Optional[str] = None
+    ) -> ContractData:
         """El revisor devuelve el borrador a la recolección de datos."""
         contract = self._repo.get(contract_id)
         transition(contract, ContractStatus.COLLECTING_DATA)
-        self._repo.save(contract, actor, "changes_requested")
+        self._repo.save(contract, actor, "changes_requested", comment)
         return contract
 
     def render(

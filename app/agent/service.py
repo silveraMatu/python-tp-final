@@ -10,17 +10,12 @@ from app.agent import replies
 from app.agent.graph import AgentState, ContractAgentGraph
 from app.agent.guardrails import truncate
 from app.agent.intents import Intent, IntentClassifier
-from app.core.config import Settings
-from app.repositories.sqlite import SqliteContractRepository
 from app.schemas.contract import ContractData, ContractStatus
 from app.services.contract_service import ContractService
 from app.services.document_loader import LoadedDocument
-from app.services.export_service import ExportService, build_export_service
+from app.services.export_service import ExportService
+from app.services.rag_service import RagService
 from app.services.extraction_service import ExtractionService
-from app.services.llm_client import build_llm_client
-from app.services.rag_service import RagService, build_rag_service
-from app.services.template_service import ContractTemplateService
-from app.services.validation_service import ValidationService
 
 
 @dataclass(frozen=True)
@@ -113,22 +108,3 @@ class AgentService:
             sources=list(dict.fromkeys(final.get("sources", []))),
             classification_source=final.get("classification_source", ""),
         )
-
-
-def build_agent_service(settings: Settings, with_rag: bool = True) -> AgentService:
-    """Cablea repositorio, servicios y LLM según la configuración."""
-    llm = build_llm_client(settings)
-    templates = ContractTemplateService(city=settings.city)
-    contracts = ContractService(
-        SqliteContractRepository(settings.database_path),
-        ValidationService(settings.confidence_threshold),
-        templates,
-        settings.template_path,
-    )
-    return AgentService(
-        contracts=contracts,
-        extraction=ExtractionService(llm, max_retries=settings.extraction_max_retries),
-        classifier=IntentClassifier(llm),
-        rag=build_rag_service(settings) if with_rag else None,
-        exporter=build_export_service(settings, contracts, templates),
-    )

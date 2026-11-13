@@ -4,9 +4,18 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
+from typing import List, Literal
 
-from pydantic import Field
+from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class ApiUserConfig(BaseModel):
+    """Usuario de la API: nombre, rol y hash SHA-256 de su API key (nunca la key)."""
+
+    name: str = Field(..., min_length=1, max_length=64, pattern=r"^[\w.\-@]+$")
+    role: Literal["REQUESTER", "REVIEWER"]
+    key_sha256: str = Field(..., pattern=r"^[0-9a-f]{64}$")
 
 
 class Settings(BaseSettings):
@@ -74,6 +83,17 @@ class Settings(BaseSettings):
         ge=-1.0,
         le=1.0,
         description="Similitud coseno mínima para considerar relevante un fragmento.",
+    )
+    api_users: List[ApiUserConfig] = Field(
+        default_factory=list,
+        description="Usuarios de la API (JSON). Sin usuarios, la API rechaza todo pedido.",
+    )
+    cors_origins: List[str] = Field(
+        default=["http://localhost:3000", "http://localhost:5173"],
+        description="Orígenes del frontend autorizados (CORS).",
+    )
+    max_upload_files: int = Field(
+        default=5, ge=1, le=20, description="Archivos máximos por mensaje."
     )
     confidence_threshold: float = Field(
         default=0.80,
