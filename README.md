@@ -31,6 +31,17 @@ créditos, o uno local), LibreOffice (`soffice`) para generar PDF.
 Autenticación: header `X-API-Key`. Un solicitante solo ve sus contratos; un revisor ve los que
 llegaron a revisión.
 
+## Para quien construya el frontend
+
+Toda la información está en [`docs/GUIA_FRONTEND.md`](docs/GUIA_FRONTEND.md) (API, pantallas,
+reglas de seguridad y checklist de aceptación) y el esquema formal en
+[`docs/openapi.json`](docs/openapi.json). Para desarrollar sin armar datos a mano:
+
+```bash
+uv run python -m app.cli demo-seed --force     # usuarios con keys conocidas y contratos en cada estado
+uv run uvicorn app.api.main:app --env-file data/demo/demo.env
+```
+
 ## Comandos útiles
 
 ```bash
@@ -38,4 +49,5 @@ uv run pytest                      # tests unitarios (sin red)
 uv run pytest -m integration       # contra Ollama real
 uv run python -m app.cli chat      # conversar con el agente en la terminal
 uv run python -m app.cli index     # reindexar la base de conocimiento (RAG)
+uv run python -m app.cli openapi   # regenerar docs/openapi.json tras cambiar la API
 ```
