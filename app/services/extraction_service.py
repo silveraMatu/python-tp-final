@@ -45,6 +45,7 @@ _DATE_TOKEN_RES: Final[tuple[re.Pattern[str], ...]] = (
     re.compile(r"\d{4}-\d{1,2}-\d{1,2}"),
     re.compile(r"\d{1,2}[/\-.]\d{1,2}[/\-.]\d{4}"),
     re.compile(r"\d{1,2}\s+de\s+[A-Za-zÁÉÍÓÚáéíóú]+\s+de(?:l)?\s+\d{4}", re.IGNORECASE),
+    re.compile(r"\d{1,2}\s+[A-Za-z]{3,4}\.?(?:\s*/\s*[A-Za-z]{3,4}\.?)?\s+\d{4}"),
 )
 _MODALITIES: Final[frozenset[str]] = frozenset(
     {"INDETERMINATE", "FIXED_TERM", "TRIAL_PERIOD", "PART_TIME"}

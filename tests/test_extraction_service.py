@@ -231,3 +231,13 @@ def test_modality_not_in_evidence_is_capped() -> None:
         FakeLLM(payload(field("terms.modalidad", "PART_TIME", text)))
     ).extract_from_text(text)
     assert bad.candidates[0].value == "INDETERMINATE"  # corregido según la evidencia
+
+
+def test_abbreviated_dni_date_is_verified_against_evidence() -> None:
+    llm = FakeLLM(payload(field("employee.fecha_nacimiento", "1995-03-15", "15 MAR/MAR 1995", 0.98)))
+    result = ExtractionService(llm).extract_from_document(
+        LoadedDocument("dni.png", images=(b"png",))
+    )
+    assert result.candidates[0].value == "1995-03-15"
+    assert result.candidates[0].confidence_score == 0.98
+    assert result.warnings == []

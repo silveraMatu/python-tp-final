@@ -12,6 +12,12 @@ from app.services.normalization import normalize_value
         ("employee.fecha_nacimiento", "15-3-1995", "1995-03-15"),
         ("terms.fecha_inicio", "9 de noviembre de 2026", "2026-11-09"),
         ("terms.fecha_inicio", "1995-3-5", "1995-03-05"),
+        ("employee.fecha_nacimiento", "15 MAR 1995", "1995-03-15"),
+        ("employee.fecha_nacimiento", "15 MAR/MAR 1995", "1995-03-15"),
+        ("employee.fecha_nacimiento", "7 ENE / JAN 1990", "1990-01-07"),
+        ("employee.fecha_nacimiento", "3 sept. 1988", "1988-09-03"),
+        ("employee.fecha_nacimiento", "15 XYZ 1995", "15 XYZ 1995"),
+        ("employee.fecha_nacimiento", "31 FEB 1995", "31 FEB 1995"),
         ("terms.fecha_inicio", "31/02/2026", "31/02/2026"),  # inválida: no se adivina
         ("terms.fecha_inicio", "pronto", "pronto"),
         ("terms.remuneracion_bruta", "$ 2.500.000", "2500000"),

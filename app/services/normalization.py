@@ -16,10 +16,19 @@ _MONTHS: Final[dict[str, int]] = {
     "julio": 7, "agosto": 8, "septiembre": 9, "setiembre": 9, "octubre": 10,
     "noviembre": 11, "diciembre": 12,
 }  # fmt: skip
+_MONTH_ABBREVIATIONS: Final[dict[str, int]] = {
+    "ene": 1, "jan": 1, "feb": 2, "mar": 3, "abr": 4, "apr": 4, "may": 5, "jun": 6,
+    "jul": 7, "ago": 8, "aug": 8, "sep": 9, "sept": 9, "set": 9, "oct": 10,
+    "nov": 11, "dic": 12, "dec": 12,
+}  # fmt: skip
 _NUMERIC_DATE_RE: Final[re.Pattern[str]] = re.compile(r"^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})$")
 _ISO_DATE_RE: Final[re.Pattern[str]] = re.compile(r"^(\d{4})-(\d{1,2})-(\d{1,2})$")
 _TEXT_DATE_RE: Final[re.Pattern[str]] = re.compile(
     r"^(\d{1,2})\s+de\s+([a-záéíóú]+)\s+de(?:l)?\s+(\d{4})$", re.IGNORECASE
+)
+# Formato de los DNI: "15 MAR 1995" o "15 MAR/MAR 1995" (mes en español/inglés).
+_ABBREVIATED_DATE_RE: Final[re.Pattern[str]] = re.compile(
+    r"^(\d{1,2})\s+([a-z]{3,4})\.?(?:\s*/\s*([a-z]{3,4})\.?)?\s+(\d{4})$", re.IGNORECASE
 )
 _THOUSANDS_DOT_RE: Final[re.Pattern[str]] = re.compile(r"^\d{1,3}(\.\d{3})+$")
 _DECIMAL_COMMA_RE: Final[re.Pattern[str]] = re.compile(r"^\d+,\d{1,2}$")
@@ -41,7 +50,7 @@ def _to_iso(year: int, month: int, day: int) -> str | None:
 
 
 def normalize_date(raw: str) -> str:
-    """``15/03/1995`` o ``15 de marzo de 1995`` -> ``1995-03-15``."""
+    """``15/03/1995``, ``15 de marzo de 1995`` o ``15 MAR 1995`` -> ``1995-03-15``."""
     text = raw.strip()
     if match := _ISO_DATE_RE.match(text):
         year, month, day = (int(g) for g in match.groups())
@@ -53,6 +62,18 @@ def normalize_date(raw: str) -> str:
         month = _MONTHS.get(_strip_accents(match.group(2).lower()))
         if month is not None:
             return _to_iso(int(match.group(3)), month, int(match.group(1))) or raw
+    if match := _ABBREVIATED_DATE_RE.match(text):
+        day, first, second, year = match.groups()
+        month = next(
+            (
+                _MONTH_ABBREVIATIONS[token.lower()]
+                for token in (first, second)
+                if token and token.lower() in _MONTH_ABBREVIATIONS
+            ),
+            None,
+        )
+        if month is not None:
+            return _to_iso(int(year), month, int(day)) or raw
     return raw
 
 

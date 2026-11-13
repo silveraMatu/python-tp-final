@@ -27,14 +27,17 @@ class Settings(BaseSettings):
     city: str = Field(default="Córdoba", description="Ciudad de celebración del contrato.")
     ollama_host: str = Field(default="http://localhost:11434", description="URL del servidor Ollama.")
     ollama_text_model: str = Field(
-        default="qwen2.5vl:3b", description="Modelo para texto (el mismo de visión evita cargar dos)."
+        default="deepseek-v4.1-flash:cloud", description="Modelo para mensajes de texto."
     )
     ollama_vision_model: str = Field(
-        default="qwen2.5vl:3b", description="Modelo de visión para imágenes y PDFs escaneados."
+        default="deepseek-v4.1-flash:cloud",
+        description="Modelo de visión para imágenes y PDFs escaneados.",
     )
-    ollama_timeout: float = Field(
-        default=300.0, gt=0, description="Timeout (s) por llamada; holgado para inferencia en CPU."
+    ollama_think: bool = Field(
+        default=False,
+        description="Activa el razonamiento del modelo; apagado es más rápido y barato.",
     )
+    ollama_timeout: float = Field(default=120.0, gt=0, description="Timeout (s) por llamada.")
     extraction_max_retries: int = Field(
         default=2, ge=0, le=5, description="Reintentos ante una respuesta inválida del modelo."
     )

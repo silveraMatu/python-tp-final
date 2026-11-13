@@ -7,6 +7,7 @@ from typing import Any, Mapping, Optional, Protocol, Sequence
 import httpx
 from ollama import Client, ResponseError
 
+from app.core.config import Settings
 from app.core.exceptions import ExtractionError, LLMUnavailableError
 
 
@@ -30,24 +31,27 @@ class LLMClient(Protocol):
 
 
 class OllamaClient:
-    """Adaptador de :class:`LLMClient` sobre un servidor Ollama local.
+    """Adaptador de :class:`LLMClient` sobre Ollama (local o modelos ``:cloud``).
 
     Usa el modelo de visión si hay imágenes y el de texto en caso contrario.
     La salida se restringe con ``format=<JSON Schema>`` y ``temperature=0`` para que
-    sea lo más determinista posible.
+    sea lo más determinista posible. Con modelos ``:cloud`` los textos e imágenes
+    viajan a Ollama Cloud: usar solo datos ficticios en pruebas.
     """
 
     def __init__(
         self,
         host: str = "http://localhost:11434",
-        text_model: str = "qwen2.5vl:3b",
-        vision_model: str = "qwen2.5vl:3b",
-        timeout: float = 300.0,
+        text_model: str = "deepseek-v4.1-flash:cloud",
+        vision_model: str = "deepseek-v4.1-flash:cloud",
+        timeout: float = 120.0,
+        think: bool = False,
         client: Optional[Client] = None,
     ) -> None:
         self._client = client if client is not None else Client(host=host, timeout=timeout)
         self._text_model = text_model
         self._vision_model = vision_model
+        self._think = think
 
     def generate_json(
         self,
@@ -66,11 +70,18 @@ class OllamaClient:
                 model=model,
                 messages=[{"role": "system", "content": system}, user_message],
                 format=dict(schema),
-                options={"temperature": 0, "num_ctx": 8192},
+                options={"temperature": 0},
+                think=self._think,
             )
         except ResponseError as exc:
+            hint = (
+                " Revisá los créditos o la suscripción de Ollama Cloud."
+                if exc.status_code == 402
+                else ""
+            )
             raise LLMUnavailableError(
-                f"Ollama rechazó la solicitud al modelo '{model}' ({exc.status_code}): {exc.error}"
+                f"Ollama rechazó la solicitud al modelo '{model}' ({exc.status_code}): "
+                f"{exc.error}.{hint}"
             ) from exc
         except (httpx.HTTPError, ConnectionError, TimeoutError) as exc:
             raise LLMUnavailableError(f"No se pudo contactar a Ollama: {exc}") from exc
@@ -79,3 +90,14 @@ class OllamaClient:
         if not content:
             raise ExtractionError(f"El modelo '{model}' devolvió una respuesta vacía")
         return str(content)
+
+
+def build_llm_client(settings: Settings) -> OllamaClient:
+    """Construye el cliente del LLM a partir de la configuración."""
+    return OllamaClient(
+        host=settings.ollama_host,
+        text_model=settings.ollama_text_model,
+        vision_model=settings.ollama_vision_model,
+        timeout=settings.ollama_timeout,
+        think=settings.ollama_think,
+    )
