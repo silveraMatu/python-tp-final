@@ -50,6 +50,23 @@ class Settings(BaseSettings):
     max_image_side: int = Field(
         default=1280, ge=256, description="Lado mayor (px) al que se reduce cada imagen."
     )
+    embedding_model: str = Field(
+        default="nomic-embed-text", description="Modelo de embeddings (local, vía Ollama)."
+    )
+    chroma_path: Path = Field(
+        default=Path("data/chroma"), description="Directorio de la base vectorial ChromaDB."
+    )
+    knowledge_dir: Path = Field(
+        default=Path("data/knowledge"),
+        description="Documentos (PDF/MD/TXT) que alimentan las consultas del RAG.",
+    )
+    rag_top_k: int = Field(default=6, ge=1, le=20, description="Fragmentos recuperados por consulta.")
+    rag_min_score: float = Field(
+        default=0.5,
+        ge=-1.0,
+        le=1.0,
+        description="Similitud coseno mínima para considerar relevante un fragmento.",
+    )
     confidence_threshold: float = Field(
         default=0.80,
         ge=0.0,
