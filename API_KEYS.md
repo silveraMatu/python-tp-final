@@ -43,3 +43,7 @@ No. Son las únicas **de demostración**, pero existen otras:
 3. **Keys de prueba en los tests** (`tests/test_api.py`). Usan valores fijos de prueba (`key-ana`, `key-carlos`, `key-bruno`) que solo existen dentro de los tests.
 
 El proyecto no usa claves de OpenAI, Google ni otros proveedores externos.
+
+
+## Comando para incializar el Backend:
+ uv run uvicorn app.api.main:app --env-file data/demo/demo.env
